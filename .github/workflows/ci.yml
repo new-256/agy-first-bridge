@@ -1,0 +1,68 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax:
+    name: node --check (${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # The plugin is dependency-free plain JavaScript. We only assert that every
+      # shipped source file parses. dynamic/host.js and dynamic/client.js are
+      # Cordis function BODIES (they contain a top-level `return`), so they are
+      # wrapped in a function before `node --check`.
+      - name: Syntax-check preset module
+        run: node --check preset/agy-first/agy-first-bridge.mjs
+
+      - name: Syntax-check dynamic bodies
+        shell: bash
+        run: |
+          set -e
+          for f in dynamic/host.js dynamic/client.js; do
+            printf 'function __wrap(harness){\n' > "/tmp/$(basename "$f").mjs"
+            cat "$f" >> "/tmp/$(basename "$f").mjs"
+            printf '\n}\n' >> "/tmp/$(basename "$f").mjs"
+            node --check "/tmp/$(basename "$f").mjs"
+            echo "ok: $f"
+          done
+
+  yaml:
+    name: validate composition YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse preset YAML
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import yaml
+
+          # agent.cordis.yml carries harness-specific custom tags such as
+          # `!!js <expression>` (used by the shipped `standard` preset for
+          # platform-gated rows). A stock YAML parser does not know them, so we
+          # register a permissive loader that accepts any unknown tag; we only
+          # assert the documents are structurally well-formed.
+          class Lenient(yaml.SafeLoader):
+              pass
+          Lenient.add_multi_constructor("", lambda loader, suffix, node: None)
+
+          for p in ("preset/agy-first/preset.yml", "preset/agy-first/agent.cordis.yml"):
+              with open(p, encoding="utf-8") as fh:
+                  yaml.load(fh, Loader=Lenient)
+              print("ok:", p)
+          PY

@@ -1,0 +1,88 @@
+# Architecture
+
+[简体中文](../ARCHITECTURE.md)
+
+## Background: the two planes of DSH / Cordis
+
+DSH capabilities are composed with Cordis; each capability is a plugin row in a `cordis.yml`. There are two planes:
+
+- **Host plane**: runs in the DSH Node.js process; owns the registries, the sandbox and approval stack, persistence, the model route, the subagent registry, and anything shared across sessions. Files, networking, commands, Agent/Session access, host events and services, and model tools live here.
+- **Client plane**: runs in the browser page; owns themes, layout, current page state, tool cards, and Slot UI.
+
+An **agent preset** is what one session contributes to those registries — its tools, persona, and prompt sections. A row that publishes a service belongs to the host composition; a row that only registers into `tools` / `systemPrompt` and publishes no service is "preset-plane safe" (like `tool-fs`) and needs no isolate realm. This plugin is the latter kind.
+
+Host and Client communicate only through package-private JSON RPC: the host exposes methods with `harness.handle(method, handler)` and the client calls them with `host.call(method, args)`. The direction is **Client → Host**.
+
+## Component overview
+
+```
+                          ┌─────────────────────── DSH Host (Node.js) ───────────────────────┐
+                          │                                                                  │
+   model (any mode) ──tool call──▶ agy_run / agy_continue                                     │
+                          │        │                                                          │
+                          │        ├─ buildArgv: always --dangerously-skip-permissions        │
+                          │        │              + --output-format json + --print-timeout    │
+                          │        │              + mode(auto→plan/accept-edits)/model/...     │
+                          │        │                                                          │
+                          │        ├─ subprocess.spawn(agy ...) ──────────▶ local agy CLI     │
+                          │        │      exec.signal + ctx.timeout→terminate() for cancel     │
+                          │        │                                                          │
+                          │        ├─ parse agy JSON → { ok, status, response, conv, ... }     │
+                          │        │                                                          │
+                          │        ├─ failed & rate-limited/network? ─▶ userQuestions.ask()    │
+                          │        │        fallback → { fallback:true, FALLBACK_TO_DSH }      │
+                          │        │        retry    → run once more (max 2)                   │
+                          │        │                                                          │
+                          │        └─ update status snapshot (begin/end) ─┐                    │
+                          │                                               │                    │
+                          │  systemPrompt.section('agy:policy')           │ harness.handle('agy_status')
+                          │                                               │        ▲           │
+                          └────────────────────────────────────────────────┼────────┼──────────┘
+                                                                          │ host.call('agy_status') every 1.2s
+                          ┌──────────────── DSH Client (browser) ──────────┼────────┼───────┐
+                          │  session header Slot: conversation.session.header.utilities │    │
+                          │       Indicator light ──────────────────────────────────────┘    │
+                          │       ● working / ok / failed / fallback / idle (theme tokens)     │
+                          └───────────────────────────────────────────────────────────────────┘
+```
+
+## Host half (`dynamic/host.js` / `preset/.../agy-first-bridge.mjs`)
+
+- `inject: ['tools', 'subprocess', 'systemPrompt', 'timer']` — hard dependencies; the rest are read optionally with `ctx.get()` (`jobs` / `planMode` / `sandboxPolicy` / `userQuestions`).
+- `buildArgv()` assembles the agy command line, **always** including `--dangerously-skip-permissions`, `--output-format json`, and `--print-timeout <sec>s`; with `mode:auto` it reads `planMode` to choose `plan` vs `accept-edits`.
+- `runSync()` executes through `subprocess.spawn`, forwarding the caller's `exec.signal` to the child and using `ctx.timeout(() => handle.terminate(), (timeout+60)s)` as a safety net.
+- The background path runs through `jobs.start({ kind:'bash', owner: exec.agent, run() {...} })`; `run()` returns `{ cancel, done }`, and `done` parses the result and updates status.
+- `parseAgyJson()` tolerantly parses agy's JSON output (falling back to the last JSON line if a whole-string parse fails).
+- The result is a single plain JSON object; `render()` produces a human-readable tool card.
+
+### Key constraints (sandbox vs real Node)
+
+| Constraint | Dynamic plugin (sandbox) | Preset `.mjs` (real Node) |
+| --- | --- | --- |
+| `import` / `require` | ❌ forbidden | ⚠️ available, but **cannot reach** `@deepseek-ai/*` (an upward search from the user home never finds the harness packages), so the module is **dependency-free** |
+| `AbortController` | ❌ absent (use `exec.signal` + `handle.terminate()`) | ✅ present, but the same approach is kept for parity |
+| `process` / `Buffer` / native timers | ❌ absent | ✅ present (unused) |
+| Tool registration | `harness.registerTool(ctx, harness.defineTool({...}))` | `ctx.tools.register(<plain ToolDefinition object>)` |
+| Host→Client RPC | `harness.handle('agy_status', ...)` | ⚠️ no client half, so not registered (and no consumer) |
+
+> This is exactly why **the status light exists only in the dynamic form**: a preset is a host-plane composition whose `.mjs` runs only on the Node side and has no browser UI; the live light is a client-plane Slot component that must be loaded by the client half of a dynamic Cordis plugin.
+
+## Client half (`dynamic/client.js`)
+
+- `inject: ['timer']`, with `ctx.get('slots')` read optionally.
+- Injects a stylesheet (with a pulse animation) via `styles.insert(css)`, wrapped in `ctx.effect` so it is cleaned up on unload.
+- The `Indicator` component polls `host.call('agy_status')` every 1.2s inside `React.useEffect` via `ctx.interval(tick, 1200)`, painting a coloured dot + label from `state`; the timer is disposed on unmount.
+- Registered into the Slot `conversation.session.header.utilities` (session scope, list kind) with `id: 'agy-indicator'`.
+
+## Lifecycle and reversibility
+
+Every side effect is attached to the current fiber and reclaimed on `cordis_stop` / `cordis_undefine` / preset unload:
+
+- tools: `ctx.tools.register(...)` / `harness.registerTool(...)` return disposers;
+- prompt section: `ctx.systemPrompt.section(...)`;
+- styles: `styles.insert(...)` (wrapped in `ctx.effect`);
+- timers: `ctx.timeout(...)` / `ctx.interval(...)` return disposers.
+
+## Data discipline
+
+The plugin never serializes DSH live objects (Service / Event / Slot / Session). It reads only the leaf fields it needs (agy's stdout text, exit code, etc.) and builds the smallest owned JSON object, free of host references, to cross the RPC boundary and render.

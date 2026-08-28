@@ -1,8 +1,10 @@
 # agy-first-bridge
 
+**简体中文** · [English](README.en.md)
+
 > 一个用于 **DeepSeek Harness (DSH)** 的 Cordis 插件：把编码/构建/调试/排查等实际工作**优先派发给本机的 `agy` CLI**，DSH 全程掌控 agy（`--dangerously-skip-permissions`，agy 全程无提示），并在 **agy 流量受限 / 网络不通** 时弹窗让用户选择是否回退到 **DSH 本地 API 配置**；同时在会话标题栏提供一个 **实时状态灯**，清晰显示 agy 是否正在工作。
 
-[English summary below](#english-summary)
+![agy 状态灯的几种状态](assets/indicator-states.svg)
 
 ---
 
@@ -120,7 +122,9 @@ agy-first-bridge/
 
 `agy-first-bridge` is a Cordis plugin for the **DeepSeek Harness (DSH)**. It registers two model tools (`agy_run`, `agy_continue`) that dispatch real work to the local **`agy` CLI** under full DSH control (`--dangerously-skip-permissions`, so agy never prompts), and injects an *agy-first* policy so the model prefers agy across every mode. When agy is **rate-limited or the network is down**, it pops a confirmation dialog offering the **DSH local API config** as a fallback, and it renders a **live status light** in the session header showing whether agy is currently working.
 
-Two forms are shipped: a **persistent agent preset** (`preset/agy-first/`, survives restart, host-side fallback included) and a **dynamic Cordis plugin** (`dynamic/`, adds the browser status light, needs a one-time approval). See [docs/](docs/) for install, architecture, and behaviour details.
+Two forms are shipped: a **persistent agent preset** (`preset/agy-first/`, survives restart, host-side fallback included) and a **dynamic Cordis plugin** (`dynamic/`, adds the browser status light, needs a one-time approval).
+
+👉 **Full English documentation: [README.en.md](README.en.md)** — with English guides under [`docs/en/`](docs/en/) (install, architecture, fallback & indicator).
 
 ## License
 
