@@ -54,6 +54,24 @@ args = ["C:\\Users\\lcl\\Desktop\\agy-first-bridge\\mcp\\agy-mcp-server.mjs"]
 
 - `AGY_MCP_CWD` — default working directory for agy calls that do not pass `cwd` (default `C:\Users\lcl\Desktop\DSH`).
 
+### DSH itself (via `@deepseek-ai/dsh-mcp-client`)
+
+Inside DSH, the same bridge is registered in the `cordis-agy` preset with one plugin row, so the model also sees the server-qualified native tools `mcp__agy__agy_run` / `mcp__agy__agy_continue`:
+
+```yaml
+- id: mcp-agy
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: agy
+    transport: stdio
+    command: node
+    args: ['<stable copy>\agy-mcp-server.mjs']
+    toolCallTimeoutMs: 600000
+    failOnStartupError: false
+```
+
+`failOnStartupError: false` keeps a missing `agy` CLI from blocking session start; `toolCallTimeoutMs` covers long agy runs.
+
 ## Self-test
 
 ```bash
