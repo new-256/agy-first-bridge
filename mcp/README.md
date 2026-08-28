@@ -2,12 +2,33 @@
 
 [中文说明见下](#中文说明)
 
-This directory ships a **standalone, dependency-free MCP (Model Context Protocol) server** that exposes the local `agy` CLI as two MCP tools:
+This directory ships a **standalone, dependency-free MCP (Model Context Protocol) server** that exposes the local `agy` CLI as three MCP tools:
 
 | Tool | Purpose |
 | --- | --- |
 | `agy_run` | Dispatch a coding/build/debug/investigation task to the local agy CLI and return its final answer. |
 | `agy_continue` | Continue an existing agy conversation (`conversationId`, or `latest: true`). |
+| `agy_status` | **Live observation**: what agy is doing RIGHT NOW (running count, current step = tool name + arguments or thinking/typing, recent step trail, last completed run). Call it mid-flight to watch progress. |
+
+**Why:** the DSH plugin (preset / dynamic form) only exists inside DSH sessions. With the MCP server, *any* MCP-capable host — Claude Code, Codex, Cherry Studio, Cline, etc. — **discovers the tools itself** (`tools/list`) and decides when to call them, even when no "agy-first" preset is loaded. The agent stays in control of *whether* to delegate to agy; the server guarantees *how* agy runs.
+
+## Live observation
+
+agy runs with `--output-format stream-json`; each `step_update` event is parsed
+on arrival and folded into an in-memory snapshot. Any agent can call
+`agy_status` while `agy_run`/`agy_continue` is still in flight:
+
+```
+agy status: running (1 running)
+current: step 4 → run_command {"CommandLine":"pwsh -Command Get-ChildItem …"}
+recent steps:
+  [ACTIVE] step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
+  [DONE]   step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
+last: ERROR conv=753f2cda-… @ 2026-08-28T10:27:55.958Z
+```
+
+No polling loops needed — the snapshot is owned by the server process and
+exposed on demand.
 
 **Why:** the DSH plugin (preset / dynamic form) only exists inside DSH sessions. With the MCP server, *any* MCP-capable host — Claude Code, Codex, Cherry Studio, Cline, etc. — **discovers the tools itself** (`tools/list`) and decides when to call them, even when no "agy-first" preset is loaded. The agent stays in control of *whether* to delegate to agy; the server guarantees *how* agy runs.
 
@@ -97,12 +118,30 @@ A full end-to-end probe (initialize → tools/list → a real `agy_run` returnin
 
 # 中文说明
 
-本目录提供一个**独立的、零依赖的 MCP (Model Context Protocol) 服务器**，把本机 `agy` CLI 暴露为两个 MCP 工具：
+本目录提供一个**独立的、零依赖的 MCP (Model Context Protocol) 服务器**，把本机 `agy` CLI 暴露为三个 MCP 工具：
 
 | 工具 | 用途 |
 | --- | --- |
 | `agy_run` | 把编码/构建/调试/排查任务派发给本机 agy CLI，返回最终答复 |
 | `agy_continue` | 继续已有的 agy 会话（`conversationId` 或 `latest: true`） |
+| `agy_status` | **实时观察**：agy 此刻在干什么（运行计数、当前步骤 = 工具名+参数或思考/打字中、最近步骤轨迹、最近完成运行）。运行中随时可查，无需等待结束 |
+
+**用途：** DSH 插件（preset / 动态形态）只在 DSH 会话内存在。有了 MCP 服务器，任何支持 MCP 的宿主（Claude Code、Codex、Cherry Studio、Cline 等）都能通过 `tools/list` **自行发现**这些工具，并**自主决定**何时调用——即使当前没有加载任何 "agy-first" preset。是否委派给 agy 由调用方代理决定；服务器只保证 agy 的运行方式。
+
+## 实时观察
+
+agy 以 `--output-format stream-json` 运行；每个 `step_update` 事件到达即被解析并入内存快照。`agy_run`/`agy_continue` 仍在进行时，任何代理都能调用 `agy_status`：
+
+```
+agy status: running (1 running)
+current: step 4 → run_command {"CommandLine":"pwsh -Command Get-ChildItem …"}
+recent steps:
+  [ACTIVE] step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
+  [DONE]   step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
+last: ERROR conv=753f2cda-… @ 2026-08-28T10:27:55.958Z
+```
+
+无需轮询——快照归服务器进程所有，按需返回。
 
 **用途：** DSH 插件（preset / 动态形态）只在 DSH 会话内存在。有了 MCP 服务器，任何支持 MCP 的宿主（Claude Code、Codex、Cherry Studio、Cline 等）都能通过 `tools/list` **自行发现**这两个工具，并**自主决定**何时调用——即使当前没有加载任何 "agy-first" preset。是否委派给 agy 由调用方代理决定；服务器只保证 agy 的运行方式。
 

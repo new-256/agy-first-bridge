@@ -2,7 +2,7 @@
 
 [English](MCP-POLICY.md) · 中文 —— 权威副本；同时安装到 `~/.claude/CLAUDE.md` 与 `~/.codex/AGENTS.md`。
 
-本机 **`agy`** 代理 CLI 通过 MCP 服务器 `agy` 对当前宿主可用，工具为 **`agy_run`** 与 **`agy_continue`**（在本宿主中显示为服务器限定名 `mcp__agy__agy_run` / `mcp__agy__agy_continue`）。agy **在宿主的完全控制下全自动运行** —— 权限自动批准（`--dangerously-skip-permissions`）、从不弹提示，可改文件、跑构建、做跨文件排查。
+本机 **`agy`** 代理 CLI 通过 MCP 服务器 `agy` 对当前宿主可用，工具为 **`agy_run`**、**`agy_continue`** 与 **`agy_status`**（在本宿主中显示为服务器限定名 `mcp__agy__agy_run` / `mcp__agy__agy_continue` / `mcp__agy__agy_status`）。agy **在宿主的完全控制下全自动运行** —— 权限自动批准（`--dangerously-skip-permissions`）、从不弹提示，可改文件、跑构建、做跨文件排查。
 
 ## 优先规则 —— 披露并优先
 
@@ -11,6 +11,7 @@
 - 任务尚不允许写文件时，用 `agy_run` 且 `mode: "plan"`。
 - 同一任务的后续跟进用 `agy_continue`，带上一次结果的 `conversationId`（或 `latest: true`）。
 - 委派给子代理时，同样指示其优先调用 `agy_run`。
+- `agy_run`/`agy_continue` 运行期间，可随时调用 `agy_status` 查看 agy 此刻在干什么（当前工具/步骤、最近轨迹），无需等待其结束。
 
 ## 回退 —— 禁止循环
 

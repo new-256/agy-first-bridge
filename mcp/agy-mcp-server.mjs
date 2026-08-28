@@ -11,10 +11,16 @@
 // negotiated with the client; tools mirror the DSH plugin:
 //   - agy_run       dispatch a task to the local agy CLI
 //   - agy_continue  continue an existing agy conversation
+//   - agy_status    live snapshot of what agy is CURRENTLY doing
 //
 // DSH-style full control is kept: every invocation is non-interactive
-// (--dangerously-skip-permissions, --output-format json, --print-timeout),
-// so agy never prompts.
+// (--dangerously-skip-permissions, --print-timeout), so agy never prompts.
+//
+// Live observation: agy runs with --output-format stream-json; each
+// `step_update` event (tool ACTIVE/DONE/ERROR, agent_response text_delta) is
+// parsed on arrival and folded into an in-memory snapshot. Any agent can then
+// call the `agy_status` tool to see what agy is doing RIGHT NOW (current tool
+// and its arguments, step index, recent step trail) — no polling loops needed.
 //
 // Usage:
 //   node agy-mcp-server.mjs                # stdio MCP server
@@ -30,7 +36,7 @@ import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.2.0'
+const VERSION = '1.3.0'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
@@ -54,18 +60,89 @@ function clampInt(v, def, min, max) {
   return i
 }
 
+// ── live status snapshot (what agy is doing right now) ───────────────────────
+const MAX_TRAIL = 12
+const MAX_ARG_LEN = 120
+const status = {
+  runningCount: 0,
+  current: null,      // { tool, args, stepIndex, since }
+  trail: [],          // recent step events (tool / agent_response), newest last
+  last: null,         // { status, conversationId, at }
+  updatedAt: 0
+}
+
+function nowIso() { return new Date().toISOString() }
+
+function summarizeArgs(parameters) {
+  if (!parameters || typeof parameters !== 'object') return undefined
+  const out = {}
+  for (const k of Object.keys(parameters)) {
+    let v = parameters[k]
+    if (typeof v === 'string' && v.length > MAX_ARG_LEN) v = v.slice(0, MAX_ARG_LEN) + '…'
+    out[k] = v
+  }
+  return out
+}
+
+function foldStepUpdate(ev) {
+  const s = ev && ev.step_update
+  if (!s) return
+  status.updatedAt = nowIso()
+  if (s.step_type === 'tool') {
+    const tool = s.tool_name || (s.tool_info && s.tool_info.name) || 'tool'
+    const args = summarizeArgs(s.tool_info && s.tool_info.parameters)
+    const entry = { stepIndex: s.step_index, state: s.state, tool, args, at: nowIso() }
+    status.trail.push(entry)
+    if (status.trail.length > MAX_TRAIL) status.trail.shift()
+    if (s.state === 'ACTIVE') {
+      status.current = { tool, args, stepIndex: s.step_index, since: nowIso() }
+    } else if (status.current && status.current.stepIndex === s.step_index) {
+      status.current = null
+    }
+  } else if (s.step_type === 'agent_response' && s.state === 'ACTIVE' && s.text_delta) {
+    status.current = { tool: 'agent_response', args: { text_delta: String(s.text_delta).slice(0, MAX_ARG_LEN) }, stepIndex: s.step_index, since: nowIso() }
+  }
+}
+
+function foldResult(parsed) {
+  status.updatedAt = nowIso()
+  status.last = {
+    status: typeof parsed.status === 'string' ? parsed.status : 'UNKNOWN',
+    conversationId: typeof parsed.conversation_id === 'string' ? parsed.conversation_id : null,
+    at: nowIso()
+  }
+}
+
+function snapshot() {
+  const s = {
+    state: status.runningCount > 0 ? 'running' : 'idle',
+    runningCount: status.runningCount,
+    current: status.current,
+    trail: status.trail.slice(-MAX_TRAIL),
+    last: status.last,
+    updatedAt: status.updatedAt
+  }
+  // owned JSON only — no references to live objects
+  return JSON.parse(JSON.stringify(s))
+}
+
+// ── agy parsing (stream-json events + final result) ──────────────────────────
 function parseAgyJson(stdoutText) {
   const trimmed = String(stdoutText || '').trim()
-  if (trimmed) {
-    try { return JSON.parse(trimmed) } catch {}
-    const lines = trimmed.split(/\r?\n/).filter(Boolean)
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const ln = lines[i].trim()
-      if (ln.startsWith('{') && ln.endsWith('}')) {
-        try { return JSON.parse(ln) } catch {}
-      }
-    }
+  if (!trimmed) return null
+  // stream-json: the LAST line is {"event":"result","result":{...}}
+  const lines = trimmed.split(/\r?\n/).filter(Boolean)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const ln = lines[i].trim()
+    if (!ln.startsWith('{')) continue
+    try {
+      const obj = JSON.parse(ln)
+      if (obj && obj.event === 'result' && obj.result) return obj.result
+      if (obj && obj.status && obj.response !== undefined) return obj
+    } catch {}
   }
+  // whole-string JSON fallback
+  try { return JSON.parse(trimmed) } catch {}
   return null
 }
 
@@ -94,7 +171,7 @@ function buildResult(parsed, outcome, mode, stderrText, stdoutText) {
 }
 
 function buildArgv(exe, a) {
-  const argv = [exe, '-p', String(a.prompt), '--output-format', 'json', '--dangerously-skip-permissions']
+  const argv = [exe, '-p', String(a.prompt), '--output-format', 'stream-json', '--dangerously-skip-permissions']
   const timeoutSec = clampInt(a.timeoutSec, 300, 10, 3600)
   argv.push('--print-timeout', timeoutSec + 's')
   let mode = a.mode || 'accept-edits'
@@ -123,19 +200,43 @@ function runAgy(args) {
       resolve({ ok: false, status: 'SPAWN_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: args.mode || 'accept-edits', stderr: String(e && e.message || e) })
       return
     }
+    status.runningCount++
     let out = '', err = ''
     let killed = false
     const timer = setTimeout(() => { killed = true; try { child.kill() } catch {} }, (timeoutSec + 60) * 1000)
-    child.stdout.on('data', (d) => { out += d; if (out.length > 4_000_000) out = out.slice(-2_000_000) })
+    let lineBuf = ''
+    child.stdout.on('data', (d) => {
+      out += d
+      if (out.length > 4_000_000) out = out.slice(-2_000_000)
+      // parse NDJSON lines as they arrive (live observation)
+      lineBuf += d
+      let idx
+      while ((idx = lineBuf.indexOf('\n')) >= 0) {
+        const line = lineBuf.slice(0, idx)
+        lineBuf = lineBuf.slice(idx + 1)
+        const t = line.trim()
+        if (!t.startsWith('{')) continue
+        try {
+          const obj = JSON.parse(t)
+          if (obj && obj.event === 'step_update') foldStepUpdate(obj)
+        } catch {}
+      }
+    })
     child.stderr.on('data', (d) => { err += d; if (err.length > 1_000_000) err = err.slice(-500_000) })
     child.on('error', (e) => {
       clearTimeout(timer)
+      status.runningCount = Math.max(0, status.runningCount - 1)
+      status.updatedAt = nowIso()
       resolve({ ok: false, status: 'AGY_UNAVAILABLE', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: args.mode || 'accept-edits', stderr: 'agy spawn failed: ' + String(e && e.message || e) })
     })
     child.on('close', (code) => {
       clearTimeout(timer)
+      status.runningCount = Math.max(0, status.runningCount - 1)
+      status.current = null
       const outcome = { exitCode: killed ? 124 : code }
-      const res = buildResult(parseAgyJson(out), outcome, args.mode || 'accept-edits', err, out)
+      const parsed = parseAgyJson(out)
+      if (parsed) foldResult(parsed)
+      const res = buildResult(parsed, outcome, args.mode || 'accept-edits', err, out)
       if (killed && !res.ok) res.stderr = (res.stderr ? res.stderr + ' ' : '') + '[killed by timeout guard]'
       resolve(res)
     })
@@ -157,10 +258,32 @@ function textResult(res) {
   return { content: [{ type: 'text', text: head + (body ? '\n\n' + body : '') + note }] }
 }
 
+function statusText() {
+  const s = snapshot()
+  const lines = []
+  lines.push('agy status: ' + s.state + (s.runningCount > 0 ? ' (' + s.runningCount + ' running)' : ''))
+  if (s.current) {
+    const c = s.current
+    lines.push('current: step ' + c.stepIndex + ' → ' + c.tool + (c.args ? ' ' + JSON.stringify(c.args) : ''))
+  } else if (s.state === 'running') {
+    lines.push('current: (starting / thinking)')
+  }
+  if (s.trail.length) {
+    lines.push('recent steps:')
+    for (const e of s.trail.slice(-6)) {
+      const a = e.args ? ' ' + JSON.stringify(e.args) : ''
+      lines.push('  [' + e.state + '] step ' + e.stepIndex + ' ' + e.tool + a)
+    }
+  }
+  if (s.last) lines.push('last: ' + s.last.status + (s.last.conversationId ? ' conv=' + s.last.conversationId : '') + ' @ ' + s.last.at)
+  if (s.updatedAt) lines.push('updatedAt: ' + s.updatedAt)
+  return lines.join('\n')
+}
+
 const TOOLS = [
   {
     name: 'agy_run',
-    description: 'Dispatch a coding/build/debug/investigation task to the local agy agent CLI and return its final answer. agy runs fully non-interactively (permissions auto-approved, never prompts). Prefer it for implementation, multi-file edits, refactors and debugging; use your own tools for quick read-only lookups and final build/test verification. mode=plan runs agy read-only; default accept-edits applies edits directly.',
+    description: 'Dispatch a coding/build/debug/investigation task to the local agy agent CLI and return its final answer. agy runs fully non-interactively (permissions auto-approved, never prompts). Prefer it for implementation, multi-file edits, refactors and debugging; use your own tools for quick read-only lookups and final build/test verification. mode=plan runs agy read-only; default accept-edits applies edits directly. While it runs, call agy_status to watch what agy is doing live.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -192,10 +315,18 @@ const TOOLS = [
       },
       required: ['prompt']
     }
+  },
+  {
+    name: 'agy_status',
+    description: 'Read a live snapshot of what the local agy agent is currently doing: running count, the current step (tool name + arguments being executed, or agent_response thinking/typing), the recent step trail (tools executed, done/error), and the last completed run status + conversation id. Call this to check on an in-flight agy_run/agy_continue without waiting for it to finish.',
+    inputSchema: { type: 'object', properties: {} }
   }
 ]
 
 async function callTool(name, args) {
+  if (name === 'agy_status') {
+    return { content: [{ type: 'text', text: statusText() }] }
+  }
   const a = args || {}
   if (!a.prompt || !String(a.prompt).trim()) {
     return { content: [{ type: 'text', text: 'agy error: prompt is required' }], isError: true }
@@ -270,7 +401,7 @@ process.on('SIGTERM', () => process.exit(0))
 
 // --check self-test: verify tool schema surface, no MCP handshake.
 if (process.argv.includes('--check')) {
-  const valid = TOOLS.every((t) => t.name && t.inputSchema && t.inputSchema.type === 'object' && Array.isArray(t.inputSchema.required))
+  const valid = TOOLS.every((t) => t.name && t.inputSchema && t.inputSchema.type === 'object')
   console.log(JSON.stringify({ ok: valid, server: NAME, version: VERSION, tools: TOOLS.map((t) => t.name) }, null, 2))
   process.exit(valid ? 0 : 1)
 }

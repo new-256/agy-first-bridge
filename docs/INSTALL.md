@@ -69,7 +69,7 @@ const CWD_FALLBACK = 'C:\\Users\\lcl\\Desktop\\DSH'
 
 ### 4. 校验它能挂载
 
-在一个带 Cordis 能力的会话里，通过 `agentPresets.standingKeyFor('agy-first')` 做一次 mount 校验；返回成功即表示模块被正确导入、两个工具已注册、提示段已装配、且没有触发根 realm 冲突。
+在一个带 Cordis 能力的会话里，通过 `agentPresets.standingKeyFor('agy-first')` 做一次 mount 校验；返回成功即表示模块被正确导入、三个工具（`agy_run` / `agy_continue` / `agy_status`）已注册、提示段已装配、且没有触发根 realm 冲突。
 
 也可以先做一次语法自检：
 
@@ -79,7 +79,7 @@ node --check ./preset/agy-first/agy-first-bridge.mjs
 
 ### 5. 使用
 
-新开会话时选择 preset **`Agy-First 执行代理`**（id：`agy-first`）。你会得到 `standard` 的全部能力，外加 `agy_run` / `agy_continue` 工具、agy 优先策略与限流/网络回退弹窗。
+新开会话时选择 preset **`Agy-First 执行代理`**（id：`agy-first`）。你会得到 `standard` 的全部能力，外加 `agy_run` / `agy_continue` / `agy_status` 工具、agy 优先策略与限流/网络回退弹窗。
 
 > **重要：切勿编辑随部署发行的 `agent-presets` 安装目录**（它会在升级时被覆盖，破坏 `cordis` 等出厂 preset 甚至会使该模式失效）。始终安装到**用户** preset 根目录下的独立子目录。
 

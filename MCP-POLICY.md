@@ -4,8 +4,9 @@ English | [中文](docs/MCP-POLICY.zh.md) — canonical copy; also installed int
 `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` on the authoring machine.
 
 The local **`agy`** agent CLI is available to this host through the MCP server
-`agy`, exposed as the tools **`agy_run`** and **`agy_continue`** (here they
-appear server-qualified as `mcp__agy__agy_run` / `mcp__agy__agy_continue`).
+`agy`, exposed as the tools **`agy_run`**, **`agy_continue`** and **`agy_status`**
+(here they appear server-qualified as `mcp__agy__agy_run` /
+`mcp__agy__agy_continue` / `mcp__agy__agy_status`).
 agy runs **fully non-interactively under host control** — permissions are
 auto-approved (`--dangerously-skip-permissions`), it never prompts, and it can
 edit files, run builds, and investigate multi-file code.
@@ -21,6 +22,9 @@ edit files, run builds, and investigate multi-file code.
 - For follow-ups on an existing task, use `agy_continue` with the
   `conversationId` from the previous result (or `latest: true`).
 - When you delegate to a sub-agent, tell it to also prefer `agy_run`.
+- While `agy_run`/`agy_continue` is running, you may call `agy_status` any time
+  to see what agy is doing right now (current tool/step, recent trail) without
+  waiting for it to finish.
 
 ## Fallback — never loop
 

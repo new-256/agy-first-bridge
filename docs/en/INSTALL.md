@@ -82,7 +82,7 @@ node --check ./preset/agy-first/agy-first-bridge.mjs
 
 ### 5. Use it
 
-Start a new session and select the preset **`Agy-First 执行代理`** (id: `agy-first`). You get everything from `standard`, plus the `agy_run` / `agy_continue` tools, the agy-first policy, and the rate-limit/network fallback dialog.
+Start a new session and select the preset **`Agy-First 执行代理`** (id: `agy-first`). You get everything from `standard`, plus the `agy_run` / `agy_continue` / `agy_status` tools, the agy-first policy, and the rate-limit/network fallback dialog.
 
 > **Important: never edit the shipped `agent-presets` install** that comes with the deployment (it is overwritten on upgrade, and corrupting factory presets such as `cordis` can even disable that mode). Always install under your **user** preset root as a separate subdirectory.
 

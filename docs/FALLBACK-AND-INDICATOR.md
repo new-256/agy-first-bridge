@@ -86,12 +86,15 @@ agy_run
 Host 维护一个内存中的状态快照，并在每次 agy 调用前后更新：
 
 ```js
-const status = { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, updatedAt }
+const status = { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, current, trail, updatedAt }
 begin()  // running++, state='running'
-end(res) // running--, 据结果置 ok/failed/fallback
+end(res) // running--, 据结果置 ok/failed/fallback；清空 current
+foldStepUpdate(ev) // 逐行解析 stream-json 的 step_update 事件 → current / trail
 ```
 
-Host 通过 `harness.handle('agy_status', () => snapshot())` 暴露只读快照；Client 组件用 `ctx.interval` 每 1.2s `host.call('agy_status')` 拉取并重渲染。这是标准的 Client→Host 包私有 RPC，快照只含标量字段，不含任何 Host 活对象引用。
+`current` 是 agy **此刻正在执行的步骤**（工具名 + 参数，或 agent_response 思考/打字中）；`trail` 是最近 N 条步骤轨迹。它们由运行期间的增量解析实时填充，因此状态灯 tooltip 与 `agy_status` 工具都能在 agy 运行中就显示「它正在干什么」。
+
+Host 通过 `harness.handle('agy_status', () => snapshot())` 暴露只读快照；Client 组件用 `ctx.interval` 每 1.2s `host.call('agy_status')` 拉取并重渲染，tooltip 展示 `current` 与最近 `trail`。这是标准的 Client→Host 包私有 RPC，快照只含标量字段，不含任何 Host 活对象引用。
 
 ### 一次性审批
 

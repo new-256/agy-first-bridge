@@ -12,13 +12,14 @@
 
 `agy-first-bridge` 给运行中的 DSH 会话注入两样东西：
 
-1. **两个模型工具** —— `agy_run` 与 `agy_continue`，把任务转交给本机 `agy` CLI 执行；
+1. **三个模型工具** —— `agy_run`、`agy_continue` 与 `agy_status`，把任务转交给本机 `agy` CLI 执行；
 2. **一段 agy 优先策略提示** —— 让模型在**所有模式**（普通 / plan / accept-edits / 子代理 / workflow / ralph / goal 轮次）下都优先调用 agy 做实际工作，原生工具只用于只读查询和最终验证。
 
-在此基础上，本插件还实现了用户要求的两项关键能力：
+在此基础上，本插件还实现了用户要求的几项关键能力：
 
 - **回退机制（弹窗确认）**：当 agy 疑似被限流或网络不通时，自动弹出确认框，让用户选择「使用 DSH 本地 API 配置（回退）」/「重试 agy 一次」/「不回退」。
-- **实时状态灯**：浏览器会话标题栏右侧的一枚彩色指示灯，随 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退 / 就绪）。
+- **实时状态灯**：浏览器会话标题栏右侧的一枚彩色指示灯，随 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退 / 就绪），悬停可查看**当前正在执行的步骤**。
+- **实时观察（agy_status）**：`agy_status` 工具随时返回 agy 此刻在干什么 —— 当前步骤（工具名 + 参数或思考/打字中）、最近步骤轨迹、最近完成运行。运行中即可调用，无需等待结束。
 
 ## 三种形态
 
@@ -26,9 +27,9 @@
 
 | 形态 | 位置 | 能力 | 是否随进程重启保留 | 状态灯 |
 | --- | --- | --- | --- | --- |
-| **持久 Agent Preset**（DSH 内推荐） | [`preset/agy-first/`](preset/agy-first/) | 工具 + 优先策略 + 回退弹窗 | ✅ 是（落盘为 preset） | ❌ 无（Host 面组合不含浏览器 UI） |
-| **动态 Cordis 插件**（当前会话） | [`dynamic/`](dynamic/) | 工具 + 优先策略 + 回退弹窗 + **状态灯** | ❌ 否（进程内临时） | ✅ 有（需一次性审批） |
-| **MCP 服务器**（任何 MCP 宿主） | [`mcp/`](mcp/) | `agy_run` / `agy_continue` 通过 `tools/list` 被 Claude Code、Codex、Cherry Studio 等**自动发现**，由宿主代理自主决定是否调用 | ✅ 是（注册进客户端配置） | ❌ 无 |
+| **持久 Agent Preset**（DSH 内推荐） | [`preset/agy-first/`](preset/agy-first/) | 工具 + 优先策略 + 回退弹窗 + `agy_status` | ✅ 是（落盘为 preset） | ❌ 无（Host 面组合不含浏览器 UI） |
+| **动态 Cordis 插件**（当前会话） | [`dynamic/`](dynamic/) | 工具 + 优先策略 + 回退弹窗 + **状态灯** + `agy_status` | ❌ 否（进程内临时） | ✅ 有（需一次性审批） |
+| **MCP 服务器**（任何 MCP 宿主） | [`mcp/`](mcp/) | `agy_run` / `agy_continue` / `agy_status` 通过 `tools/list` 被 Claude Code、Codex、Cherry Studio 等**自动发现**，由宿主代理自主决定是否调用 | ✅ 是（注册进客户端配置） | ❌ 无 |
 
 > **为什么状态灯只在动态形态里？** Agent Preset 是 **Host 面** 组合（`agent.cordis.yml` 挂载 Host 插件），其中的 `.mjs` 只在 Node 侧运行，天然不含浏览器 UI；而实时状态灯是 **Client 面**（浏览器 Slot）组件，需要通过动态 Cordis 插件的 Client 半加载（首次运行时在 GUI 里一次性审批）。回退弹窗是 Host 侧能力，**两种形态都具备**；MCP 形态没有 UI，限流时改为在结果文本中附加「勿循环重试」提示，由调用方代理决定回退。
 
@@ -62,7 +63,7 @@ Copy-Item -Recurse .\preset\agy-first "$env:DSH_HOME\.agent-presets\agy-first"
 
 ### 方式 C：作为 MCP 服务器注册（任何 MCP 宿主可发现）
 
-不需要 DSH 时，把 [`mcp/agy-mcp-server.mjs`](mcp/agy-mcp-server.mjs) 注册为 MCP 服务器，Claude Code / Codex / Cherry Studio 等宿主即可通过 `tools/list` 自动发现 `agy_run` / `agy_continue` 并自主决定调用：
+不需要 DSH 时，把 [`mcp/agy-mcp-server.mjs`](mcp/agy-mcp-server.mjs) 注册为 MCP 服务器，Claude Code / Codex / Cherry Studio 等宿主即可通过 `tools/list` 自动发现 `agy_run` / `agy_continue` / `agy_status` 并自主决定调用：
 
 ```bash
 # Claude Code 示例
@@ -87,9 +88,11 @@ Codex / 通用 JSON 配置、环境变量与自检见 [`mcp/README.md`](mcp/READ
 
 `agy_continue(prompt, conversationId? | latest?, ...)` —— 复用某个 agy 会话上下文继续对话，其余参数同上。
 
+`agy_status()` —— **实时观察**：返回 agy 此刻在干什么（`{ state, running, current, trail, lastStatus, lastConversationId, updatedAt }`）。`current` 为当前正在执行的步骤（工具名 + 参数，或 agent_response 思考/打字中），`trail` 为最近步骤轨迹。`agy_run`/`agy_continue` 运行期间即可调用，无需等待结束。
+
 ## DSH 完全控制 agy
 
-每次调用 agy 都强制带 `--dangerously-skip-permissions` 与 `--output-format json`，因此 **agy 从不弹权限提示，改文件也不询问**；模式、模型、effort、工作目录、超时、是否后台、能否中止全部由 DSH 侧决定，可通过 `exec.signal` + `handle.terminate()` 取消。
+每次调用 agy 都强制带 `--dangerously-skip-permissions` 与 `--output-format stream-json`，因此 **agy 从不弹权限提示，改文件也不询问**；模式、模型、effort、工作目录、超时、是否后台、能否中止全部由 DSH 侧决定，可通过 `exec.signal` + `handle.terminate()` 取消。`stream-json` 的每个 `step_update` 事件实时喂给 `agy_status` 快照。
 
 ## 回退与状态灯
 
@@ -108,7 +111,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.2.0，Node ≥18）
+├─ package.json                 # 版本元数据（v1.3.0，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -127,7 +130,7 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.2.0）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.3.0）
    └─ en/                        # 英文文档
 ```
 
@@ -137,6 +140,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **实时观察**：所有形态改用 `stream-json` 逐事件解析，新增 `agy_status` 工具（当前步骤/轨迹/最近运行），状态灯 tooltip 显示当前步骤 |
 | [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH 随软件自启（默认 preset `cordis-agy`）、DSH 内 MCP 注册、外部软件 MCP 注册（Claude Code/Codex）、披露并优先策略、版本管理 |
 | [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | MCP 服务器（零依赖、任何 MCP 宿主可发现）、CI 扩展 |
 | [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | agy 桥接工具、DSH 完全控制、回退弹窗、状态灯、两种形态、文档与 CI |

@@ -18,22 +18,23 @@ Host and Client communicate only through package-private JSON RPC: the host expo
 ```
                           ┌─────────────────────── DSH Host (Node.js) ───────────────────────┐
                           │                                                                  │
-   model (any mode) ──tool call──▶ agy_run / agy_continue                                     │
+   model (any mode) ──tool call──▶ agy_run / agy_continue / agy_status                          │
                           │        │                                                          │
                           │        ├─ buildArgv: always --dangerously-skip-permissions        │
-                          │        │              + --output-format json + --print-timeout    │
+                          │        │              + --output-format stream-json + print-timeout
                           │        │              + mode(auto→plan/accept-edits)/model/...     │
                           │        │                                                          │
                           │        ├─ subprocess.spawn(agy ...) ──────────▶ local agy CLI     │
                           │        │      exec.signal + ctx.timeout→terminate() for cancel     │
+                          │        │      parse step_update events → current/trail (live)      │
                           │        │                                                          │
-                          │        ├─ parse agy JSON → { ok, status, response, conv, ... }     │
+                          │        ├─ parse trailing result event → { ok, status, resp, conv }│
                           │        │                                                          │
                           │        ├─ failed & rate-limited/network? ─▶ userQuestions.ask()    │
                           │        │        fallback → { fallback:true, FALLBACK_TO_DSH }      │
                           │        │        retry    → run once more (max 2)                   │
                           │        │                                                          │
-                          │        └─ update status snapshot (begin/end) ─┐                    │
+                          │        └─ update status snapshot (begin/end + foldStepUpdate) ─┐   │
                           │                                               │                    │
                           │  systemPrompt.section('agy:policy')           │ harness.handle('agy_status')
                           │                                               │        ▲           │
@@ -43,17 +44,19 @@ Host and Client communicate only through package-private JSON RPC: the host expo
                           │  session header Slot: conversation.session.header.utilities │    │
                           │       Indicator light ──────────────────────────────────────┘    │
                           │       ● working / ok / failed / fallback / idle (theme tokens)     │
+                          │       tooltip: current step + recent trail                          │
                           └───────────────────────────────────────────────────────────────────┘
 ```
 
 ## Host half (`dynamic/host.js` / `preset/.../agy-first-bridge.mjs`)
 
 - `inject: ['tools', 'subprocess', 'systemPrompt', 'timer']` — hard dependencies; the rest are read optionally with `ctx.get()` (`jobs` / `planMode` / `sandboxPolicy` / `userQuestions`).
-- `buildArgv()` assembles the agy command line, **always** including `--dangerously-skip-permissions`, `--output-format json`, and `--print-timeout <sec>s`; with `mode:auto` it reads `planMode` to choose `plan` vs `accept-edits`.
-- `runSync()` executes through `subprocess.spawn`, forwarding the caller's `exec.signal` to the child and using `ctx.timeout(() => handle.terminate(), (timeout+60)s)` as a safety net.
-- The background path runs through `jobs.start({ kind:'bash', owner: exec.agent, run() {...} })`; `run()` returns `{ cancel, done }`, and `done` parses the result and updates status.
-- `parseAgyJson()` tolerantly parses agy's JSON output (falling back to the last JSON line if a whole-string parse fails).
+- `buildArgv()` assembles the agy command line, **always** including `--dangerously-skip-permissions`, `--output-format stream-json`, and `--print-timeout <sec>s`; with `mode:auto` it reads `planMode` to choose `plan` vs `accept-edits`.
+- `runSync()` executes through `subprocess.spawn`, forwarding the caller's `exec.signal` to the child and using `ctx.timeout(() => handle.terminate(), (timeout+60)s)` as a safety net. While running, `startLiveParser()` incrementally reads stdout via `ctx.interval` and folds `step_update` events into `status.current` / `status.trail` (`foldStepUpdate`) — this powers live observation.
+- The background path runs through `jobs.start({ kind:'bash', owner: exec.agent, run() {...} })`; `run()` returns `{ cancel, done }`, and `done` parses the result and updates status (a live parser is attached there too).
+- `parseAgyJson()` tolerantly parses agy's `stream-json` output (scanning backward for the trailing `{"event":"result","result":{...}}` line, tolerating log lines; whole-string JSON as a fallback).
 - The result is a single plain JSON object; `render()` produces a human-readable tool card.
+- `agy_status` tool / RPC returns the plain scalar snapshot `{ state, running, current, trail, lastStatus, lastConversationId, updatedAt }`, where `current` is the step executing right now (tool name + arguments, or agent_response thinking/typing).
 
 ### Key constraints (sandbox vs real Node)
 
@@ -71,7 +74,7 @@ Host and Client communicate only through package-private JSON RPC: the host expo
 
 - `inject: ['timer']`, with `ctx.get('slots')` read optionally.
 - Injects a stylesheet (with a pulse animation) via `styles.insert(css)`, wrapped in `ctx.effect` so it is cleaned up on unload.
-- The `Indicator` component polls `host.call('agy_status')` every 1.2s inside `React.useEffect` via `ctx.interval(tick, 1200)`, painting a coloured dot + label from `state`; the timer is disposed on unmount.
+- The `Indicator` component polls `host.call('agy_status')` every 1.2s inside `React.useEffect` via `ctx.interval(tick, 1200)`, painting a coloured dot + label from `state`; its tooltip additionally shows the `current` step and recent `trail` from the snapshot; the timer is disposed on unmount.
 - Registered into the Slot `conversation.session.header.utilities` (session scope, list kind) with `id: 'agy-indicator'`.
 
 ## Lifecycle and reversibility

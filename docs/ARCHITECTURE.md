@@ -16,22 +16,23 @@ Host 与 Client 之间只能通过包私有的 JSON RPC 通信：Host 用 `harne
 ```
                           ┌─────────────────────────── DSH Host (Node.js) ───────────────────────────┐
                           │                                                                          │
-  模型 (任一模式)  ──工具调用──▶  agy_run / agy_continue                                                │
+  模型 (任一模式)  ──工具调用──▶  agy_run / agy_continue / agy_status                                │
                           │        │                                                                 │
                           │        ├─ buildArgv: 强制 --dangerously-skip-permissions               │
-                          │        │              + --output-format json + --print-timeout          │
+                          │        │              + --output-format stream-json + --print-timeout   │
                           │        │              + mode(auto→plan/accept-edits)/model/effort/...     │
                           │        │                                                                 │
                           │        ├─ subprocess.spawn(agy ...) ──────────▶  本机 agy CLI            │
                           │        │      exec.signal + ctx.timeout→terminate() 做取消/超时           │
+                          │        │      逐行解析 step_update 事件 → 更新 current/trail（实时）      │
                           │        │                                                                 │
-                          │        ├─ 解析 agy JSON → { ok, status, response, conversationId, ... }   │
+                          │        ├─ 解析末尾 result 事件 → { ok, status, response, convId, ... }    │
                           │        │                                                                 │
                           │        ├─ 失败且疑似限流/网络？ ──▶ userQuestions.ask()  ← 真人弹窗          │
                           │        │         回退 → { fallback:true, status:FALLBACK_TO_DSH }         │
                           │        │         重试 → 再跑一次（上限 2 次）                              │
                           │        │                                                                 │
-                          │        └─ 更新 status 快照 (begin/end) ──┐                                │
+                          │        └─ 更新 status 快照 (begin/end + foldStepUpdate) ──┐              │
                           │                                          │                                │
                           │   systemPrompt.section('agy:policy')     │ harness.handle('agy_status')   │
                           │                                          │            ▲                    │
@@ -47,11 +48,12 @@ Host 与 Client 之间只能通过包私有的 JSON RPC 通信：Host 用 `harne
 ## Host 半（`dynamic/host.js` / `preset/.../agy-first-bridge.mjs`）
 
 - `inject: ['tools', 'subprocess', 'systemPrompt', 'timer']` —— 硬依赖；其余用 `ctx.get()` 可选读取（`jobs` / `planMode` / `sandboxPolicy` / `userQuestions`）。
-- `buildArgv()` 组装 agy 命令行，**始终**带上 `--dangerously-skip-permissions`、`--output-format json`、`--print-timeout <sec>s`；`mode:auto` 时读 `planMode` 决定 `plan` 还是 `accept-edits`。
-- `runSync()` 通过 `subprocess.spawn` 执行，把调用方 `exec.signal` 透传给子进程，并用 `ctx.timeout(() => handle.terminate(), (timeout+60)s)` 兜底超时。
-- 后台路径通过 `jobs.start({ kind:'bash', owner: exec.agent, run() {...} })` 执行，`run()` 返回 `{ cancel, done }`；`done` 解析结果并回填状态。
-- `parseAgyJson()` 容错解析 agy 的 JSON 输出（整体解析失败时回退到「最后一行 JSON」）。
+- `buildArgv()` 组装 agy 命令行，**始终**带上 `--dangerously-skip-permissions`、`--output-format stream-json`、`--print-timeout <sec>s`；`mode:auto` 时读 `planMode` 决定 `plan` 还是 `accept-edits`。
+- `runSync()` 通过 `subprocess.spawn` 执行，把调用方 `exec.signal` 透传给子进程，并用 `ctx.timeout(() => handle.terminate(), (timeout+60)s)` 兜底超时。运行期间 `startLiveParser()` 用 `ctx.interval` 增量读取 stdout，把 `step_update` 事件折入 `status.current` / `status.trail`（`foldStepUpdate`），实现**实时观察**。
+- 后台路径通过 `jobs.start({ kind:'bash', owner: exec.agent, run() {...} })` 执行，`run()` 返回 `{ cancel, done }`；`done` 解析结果并回填状态（同样挂 live parser）。
+- `parseAgyJson()` 容错解析 agy 的 `stream-json` 输出（从末尾向前找 `{"event":"result","result":{...}}`，容忍日志行；整体 JSON 兜底）。
 - 结果统一为一个纯 JSON 对象；`render()` 生成人类可读的工具卡片文本。
+- `agy_status` 工具 / RPC 返回纯标量快照 `{ state, running, current, trail, lastStatus, lastConversationId, updatedAt }`，`current` = 正在执行的步骤（工具名+参数，或 agent_response 思考/打字中）。
 
 ### 关键约束（沙箱 vs 真实 Node）
 
@@ -69,7 +71,7 @@ Host 与 Client 之间只能通过包私有的 JSON RPC 通信：Host 用 `harne
 
 - `inject: ['timer']`，`ctx.get('slots')` 可选读取。
 - 用 `styles.insert(css)` 注入带呼吸动画的样式（`ctx.effect` 包裹，随插件卸载清理）。
-- `Indicator` 组件在 `React.useEffect` 里用 `ctx.interval(tick, 1200)` 每 1.2s 调 `host.call('agy_status')`，据 `state` 渲染彩色圆点 + 文案；卸载时释放定时器。
+- `Indicator` 组件在 `React.useEffect` 里用 `ctx.interval(tick, 1200)` 每 1.2s 调 `host.call('agy_status')`，据 `state` 渲染彩色圆点 + 文案；tooltip 额外显示快照里的 `current`（当前步骤）与最近 `trail`；卸载时释放定时器。
 - 注册到 Slot `conversation.session.header.utilities`（session 作用域，列表型），`id: 'agy-indicator'`。
 
 ## 生命周期与可逆性

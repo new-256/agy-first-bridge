@@ -12,22 +12,24 @@
 
 `agy-first-bridge` contributes two things to a running DSH session:
 
-1. **Two model tools** — `agy_run` and `agy_continue`, which hand tasks to the local `agy` CLI.
+1. **Three model tools** — `agy_run`, `agy_continue` and `agy_status`, which hand tasks to the local `agy` CLI.
 2. **An agy-first policy prompt section** — instructs the model to prefer agy for real work in **all modes** (normal / plan / accept-edits / subagent / workflow / ralph / goal rounds); native tools are reserved for read-only lookups and final verification.
 
-On top of that it implements the two key capabilities that motivated the project:
+On top of that it implements the key capabilities that motivated the project:
 
 - **Fallback mechanism (confirmation dialog):** when agy looks rate-limited or the network is unreachable, a dialog pops up offering *"use the DSH local API config (fall back)" / "retry agy once" / "do not fall back"*.
-- **Live status light:** a coloured indicator on the right of the browser session header that reflects agy activity in real time (working / ok / failed / fallback / idle).
+- **Live status light:** a coloured indicator on the right of the browser session header that reflects agy activity in real time (working / ok / failed / fallback / idle); hovering it shows the step agy is currently executing.
+- **Live observation (`agy_status`):** the `agy_status` tool returns a snapshot of what agy is doing RIGHT NOW — the current step (tool name + arguments, or thinking/typing), the recent step trail, and the last completed run. Callable mid-flight, no waiting.
 
-## Two forms
+## Three forms
 
-The same logic ships in two forms; pick per need:
+The same logic ships in three forms; pick per need:
 
 | Form | Location | Capabilities | Survives restart | Status light |
 | --- | --- | --- | --- | --- |
-| **Persistent agent preset** (recommended) | [`preset/agy-first/`](preset/agy-first/) | tools + policy + fallback dialog | ✅ yes (persisted preset) | ❌ no (host-plane composition has no browser UI) |
-| **Dynamic Cordis plugin** (in-session) | [`dynamic/`](dynamic/) | tools + policy + fallback dialog + **status light** | ❌ no (process-local) | ✅ yes (one-time approval) |
+| **Persistent agent preset** (recommended) | [`preset/agy-first/`](preset/agy-first/) | tools + policy + fallback dialog + `agy_status` | ✅ yes (persisted preset) | ❌ no (host-plane composition has no browser UI) |
+| **Dynamic Cordis plugin** (in-session) | [`dynamic/`](dynamic/) | tools + policy + fallback dialog + **status light** + `agy_status` | ❌ no (process-local) | ✅ yes (one-time approval) |
+| **MCP server** (any MCP host) | [`mcp/`](mcp/) | `agy_run` / `agy_continue` / `agy_status` auto-discovered via `tools/list` by Claude Code, Codex, Cherry Studio, … | ✅ yes (registered in client config) | ❌ no |
 
 > **Why is the status light only in the dynamic form?** An agent preset is a **host-plane** composition (`agent.cordis.yml` mounts host plugins), and its `.mjs` runs only on the Node side, so it inherently has no browser UI. The live status light is a **client-plane** (browser Slot) component that must be loaded through the client half of a dynamic Cordis plugin (approved once in the GUI on first run). The fallback dialog is a host-side capability and is present in **both** forms.
 
@@ -75,9 +77,11 @@ In a DSH session that has Cordis capabilities loaded, define and activate the pl
 
 `agy_continue(prompt, conversationId? | latest?, ...)` — continue an existing agy conversation; other parameters as above.
 
+`agy_status()` — **live observation**: returns a snapshot of what agy is doing right now (`{ state, running, current, trail, lastStatus, lastConversationId, updatedAt }`). `current` is the step currently executing (tool name + arguments, or agent_response thinking/typing); `trail` is the recent step history. Callable while `agy_run`/`agy_continue` is in flight, no waiting.
+
 ## DSH fully controls agy
 
-Every agy call is forced with `--dangerously-skip-permissions` and `--output-format json`, so **agy never prompts and never asks before editing files**; mode, model, effort, working directory, timeout, background, and cancellation are all decided by DSH, and a run can be cancelled through `exec.signal` + `handle.terminate()`.
+Every agy call is forced with `--dangerously-skip-permissions` and `--output-format stream-json`, so **agy never prompts and never asks before editing files**; mode, model, effort, working directory, timeout, background, and cancellation are all decided by DSH, and a run can be cancelled through `exec.signal` + `handle.terminate()`. Each `step_update` event from the stream feeds the `agy_status` snapshot in real time.
 
 ## Fallback & status light
 
@@ -95,7 +99,7 @@ agy-first-bridge/
 ├─ README.md / README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                    # version metadata (v1.2.0, Node >=18)
+├─ package.json                    # version metadata (v1.3.0, Node >=18)
 ├─ MCP-POLICY.md                   # disclose-and-prefer policy for external agents (also ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md)
 ├─ .github/workflows/ci.yml       # node --check + YAML validation
 ├─ assets/indicator-states.svg    # status-light states diagram
@@ -121,6 +125,7 @@ Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/C
 
 | Version | Highlights |
 | --- | --- |
+| [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **Live observation**: all forms run agy with `stream-json` and parse `step_update` events; new `agy_status` tool (current step / trail / last run); status-light tooltip shows the current step |
 | [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH auto-start (default preset `cordis-agy`), in-DSH MCP registration, external MCP registration (Claude Code / Codex), disclose-and-prefer policy, version management |
 | [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | Zero-dependency MCP server discoverable by any MCP host, CI extension |
 | [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | agy bridge tools, full DSH control, fallback dialog, status light, both forms, docs & CI |

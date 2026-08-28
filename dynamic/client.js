@@ -45,7 +45,17 @@ return {
       else if (state === 'ok') { cls += ' agy-ok'; text = 'AGY' }
       else if (state === 'failed') { cls += ' agy-fail'; text = 'AGY 失败' }
       else if (state === 'fallback') { cls += ' agy-fb'; text = '本地回退' }
-      const title = s ? ('agy state=' + s.state + ' running=' + s.running + (s.lastStatus ? ' last=' + s.lastStatus : '') + (s.lastConversationId ? ' conv=' + s.lastConversationId : '')) : 'agy status'
+      // live detail: what agy is doing right now (current step / recent trail)
+      let detail = ''
+      if (s) {
+        const parts = []
+        if (s.current) { const c = s.current; parts.push('step ' + c.stepIndex + ' → ' + c.tool + (c.args ? ' ' + JSON.stringify(c.args) : '')) }
+        else if (s.state === 'running') parts.push('(starting / thinking)')
+        if (s.trail && s.trail.length) parts.push('recent: ' + s.trail.slice(-3).map(function (e) { return e.state + ' ' + e.tool }).join(' | '))
+        if (s.lastStatus) parts.push('last=' + s.lastStatus + (s.lastConversationId ? ' ' + s.lastConversationId.slice(0, 8) : ''))
+        detail = parts.join(' — ')
+      }
+      const title = s ? ('agy state=' + s.state + ' running=' + s.running + (detail ? '\n' + detail : '')) : 'agy status'
       return React.createElement('div', { className: cls, title: title }, React.createElement('span', { className: 'agy-dot' }), React.createElement('span', null, text))
     }
 

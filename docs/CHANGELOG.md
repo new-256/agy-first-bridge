@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.0] - 2026
+
+### Added
+- **实时观察 agy 当前正在干什么（live observation）**：所有形态改用 `--output-format stream-json` 运行 agy，逐行解析 `step_update` 事件（`step_type`：tool / agent_response / user_input；`state`：ACTIVE / DONE / ERROR；`tool_name` + 参数）。
+- **`agy_status` 工具**（三种形态统一）：返回实时快照 —— 运行计数、**当前正在执行的步骤**（工具名 + 参数，或 agent_response 思考/打字中）、最近步骤轨迹（执行的工具、完成/出错）、最近一次完成运行的状态与会话 id。可在 agy 运行期间随时调用，无需等待结束。
+  - DSH preset（`preset/agy-first/`）与动态插件（`dynamic/host.js`）：新增模型工具 `agy_status`；状态灯（`dynamic/client.js`）tooltip 同步显示当前步骤与最近轨迹。
+  - MCP 服务器（`mcp/agy-mcp-server.mjs`）：新增 `agy_status` MCP 工具，Claude Code / Codex 等宿主可随时查看 agy 在干什么。
+- `agy:policy` 提示段与 `MCP-POLICY.md` 增加「可用 `agy_status` 观察进行中的 agy 运行」。
+
+### Changed
+- agy 输出格式由 `json` 改为 `stream-json`（兼容解析：末行为 `{"event":"result",...}`，容忍额外日志行）。
+
 ## [1.2.0] - 2026
 
 ### Added
