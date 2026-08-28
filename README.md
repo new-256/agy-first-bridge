@@ -1,0 +1,127 @@
+# agy-first-bridge
+
+> 一个用于 **DeepSeek Harness (DSH)** 的 Cordis 插件：把编码/构建/调试/排查等实际工作**优先派发给本机的 `agy` CLI**，DSH 全程掌控 agy（`--dangerously-skip-permissions`，agy 全程无提示），并在 **agy 流量受限 / 网络不通** 时弹窗让用户选择是否回退到 **DSH 本地 API 配置**；同时在会话标题栏提供一个 **实时状态灯**，清晰显示 agy 是否正在工作。
+
+[English summary below](#english-summary)
+
+---
+
+## 这是什么
+
+`agy-first-bridge` 给运行中的 DSH 会话注入两样东西：
+
+1. **两个模型工具** —— `agy_run` 与 `agy_continue`，把任务转交给本机 `agy` CLI 执行；
+2. **一段 agy 优先策略提示** —— 让模型在**所有模式**（普通 / plan / accept-edits / 子代理 / workflow / ralph / goal 轮次）下都优先调用 agy 做实际工作，原生工具只用于只读查询和最终验证。
+
+在此基础上，本插件还实现了用户要求的两项关键能力：
+
+- **回退机制（弹窗确认）**：当 agy 疑似被限流或网络不通时，自动弹出确认框，让用户选择「使用 DSH 本地 API 配置（回退）」/「重试 agy 一次」/「不回退」。
+- **实时状态灯**：浏览器会话标题栏右侧的一枚彩色指示灯，随 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退 / 就绪）。
+
+## 两种形态
+
+同一套逻辑提供两种落地形态，按需选择：
+
+| 形态 | 位置 | 能力 | 是否随进程重启保留 | 状态灯 |
+| --- | --- | --- | --- | --- |
+| **持久 Agent Preset**（推荐） | [`preset/agy-first/`](preset/agy-first/) | 工具 + 优先策略 + 回退弹窗 | ✅ 是（落盘为 preset） | ❌ 无（Host 面组合不含浏览器 UI） |
+| **动态 Cordis 插件**（当前会话） | [`dynamic/`](dynamic/) | 工具 + 优先策略 + 回退弹窗 + **状态灯** | ❌ 否（进程内临时） | ✅ 有（需一次性审批） |
+
+> **为什么状态灯只在动态形态里？** Agent Preset 是 **Host 面** 组合（`agent.cordis.yml` 挂载 Host 插件），其中的 `.mjs` 只在 Node 侧运行，天然不含浏览器 UI；而实时状态灯是 **Client 面**（浏览器 Slot）组件，需要通过动态 Cordis 插件的 Client 半加载（首次运行时在 GUI 里一次性审批）。回退弹窗是 Host 侧能力，**两种形态都具备**。
+
+详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+## 快速开始
+
+### 方式 A：作为持久 Agent Preset 安装（推荐）
+
+把 `preset/agy-first/` 整个目录复制到你的 DSH 用户 preset 根目录下：
+
+```
+${DSH_HOME:-$HOME/.dsh}/.agent-presets/agy-first/
+```
+
+Windows 示例（本仓库开发环境）：
+
+```powershell
+Copy-Item -Recurse .\preset\agy-first "$env:DSH_HOME\.agent-presets\agy-first"
+```
+
+然后新开一个 DSH 会话，选择名为 **`Agy-First 执行代理`**（id：`agy-first`）的 preset 即可。它继承 `standard` preset 的全部能力，额外提供 `agy_run` / `agy_continue` 工具、agy 优先策略与限流/网络回退弹窗。
+
+> ⚠️ **不要**编辑随部署一起发行的 `agent-presets` 安装目录（升级会覆盖）。始终安装到用户 preset 根目录下的独立子目录。
+
+完整步骤与校验方法见 [docs/INSTALL.md](docs/INSTALL.md)。
+
+### 方式 B：作为动态 Cordis 插件运行（含状态灯）
+
+在一个已加载 Cordis 能力的 DSH 会话里，用 `cordis_define` + `cordis_run` 定义并激活插件，Host 半用 [`dynamic/host.js`](dynamic/host.js)，Client 半用 [`dynamic/client.js`](dynamic/client.js)。首次运行 Client 半时，DSH GUI 会请求一次性审批，批准后状态灯即出现在会话标题栏。
+
+## 依赖前提
+
+- **DeepSeek Harness (DSH)**，且会话已挂载所需 Host 服务：`tools`、`subprocess`、`systemPrompt`、`timer`（可选 `jobs`、`planMode`、`sandboxPolicy`、`userQuestions`）。
+- 本机已安装并在 `PATH` 中可用的 **`agy` CLI**（开发时验证版本 v1.1.22）。
+- 状态灯还需 DSH 的 Web GUI（Client 面）。
+
+## 工具用法
+
+`agy_run(prompt, mode?, model?, effort?, cwd?, addDirs?, timeoutSec?, background?)`
+
+- `mode`：`auto`（默认，跟随 DSH plan 状态自动选 `plan`/`accept-edits`）、`plan`、`accept-edits`。
+- `background: true`：作为后台任务运行，立即返回 `jobId`，用 `job_output` 收结果。
+- 返回：`{ ok, status, response, conversationId, durationSeconds, numTurns, totalTokens, exitCode, mode, stderr }`；回退时为 `{ ok:false, fallback:true, status:'FALLBACK_TO_DSH', ... }`。
+
+`agy_continue(prompt, conversationId? | latest?, ...)` —— 复用某个 agy 会话上下文继续对话，其余参数同上。
+
+## DSH 完全控制 agy
+
+每次调用 agy 都强制带 `--dangerously-skip-permissions` 与 `--output-format json`，因此 **agy 从不弹权限提示，改文件也不询问**；模式、模型、effort、工作目录、超时、是否后台、能否中止全部由 DSH 侧决定，可通过 `exec.signal` + `handle.terminate()` 取消。
+
+## 回退与状态灯
+
+见 [docs/FALLBACK-AND-INDICATOR.md](docs/FALLBACK-AND-INDICATOR.md)。要点：
+
+- 失败识别：非零退出，或 `stderr/response/status` 命中 `rate limit / 429 / quota / timeout / ECONN* / 网络 / 超时 / 限流 / 配额 …` 等特征。
+- 弹窗通过 DSH 的 `userQuestions.ask()` 实现；被子代理调用（无真人应答者）时自动跳过弹窗、按错误返回，避免永久阻塞。
+- 最多重试 2 次，杜绝循环；后台任务失败不弹窗（前台重跑才提示）。
+- 状态灯每 1.2s 轮询 Host 的 `agy_status` RPC，颜色取自主题 token，自动适配明暗。
+
+## 目录结构
+
+```
+agy-first-bridge/
+├─ README.md
+├─ LICENSE
+├─ .gitignore
+├─ preset/
+│  └─ agy-first/                 # 持久 Agent Preset（推荐形态）
+│     ├─ preset.yml              #   名称/描述
+│     ├─ agent.cordis.yml        #   组合：standard + 一行 agy 插件
+│     └─ agy-first-bridge.mjs    #   自包含、零依赖的 Host 插件模块
+├─ dynamic/                      # 动态 Cordis 插件形态（含状态灯）
+│  ├─ host.js                    #   code.host 函数体
+│  └─ client.js                  #   code.client 函数体（浏览器状态灯）
+└─ docs/
+   ├─ INSTALL.md
+   ├─ ARCHITECTURE.md
+   ├─ FALLBACK-AND-INDICATOR.md
+   └─ CHANGELOG.md
+```
+
+## 安全说明
+
+- `--dangerously-skip-permissions` 表示 agy 会在不再询问的情况下改动文件、执行命令。这是「DSH 完全控制 agy」这一需求的直接实现，请仅在你信任 agy 执行环境时使用。
+- 插件只向 Host 的 `tools` / `systemPrompt` 注册、并暴露一个包私有的 `agy_status` 只读 RPC，不发布任何跨会话服务，因此可安全放入 preset 面（无需 isolate realm）。
+- 所有副作用（工具注册、提示段、样式、定时器）都通过 `ctx.effect` / `ctx.tools.register` / `ctx.timeout` 挂到当前 Fiber，插件停止/更新/卸载时自动清理。
+
+---
+
+## English summary
+
+`agy-first-bridge` is a Cordis plugin for the **DeepSeek Harness (DSH)**. It registers two model tools (`agy_run`, `agy_continue`) that dispatch real work to the local **`agy` CLI** under full DSH control (`--dangerously-skip-permissions`, so agy never prompts), and injects an *agy-first* policy so the model prefers agy across every mode. When agy is **rate-limited or the network is down**, it pops a confirmation dialog offering the **DSH local API config** as a fallback, and it renders a **live status light** in the session header showing whether agy is currently working.
+
+Two forms are shipped: a **persistent agent preset** (`preset/agy-first/`, survives restart, host-side fallback included) and a **dynamic Cordis plugin** (`dynamic/`, adds the browser status light, needs a one-time approval). See [docs/](docs/) for install, architecture, and behaviour details.
+
+## License
+
+[MIT](LICENSE) © 2026 chenglong
