@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.0] - 2026
+
+### Added
+- **MCP 服务器**（`mcp/agy-mcp-server.mjs`）：零依赖 stdio MCP 服务器，把 `agy_run` / `agy_continue` 暴露给任何支持 MCP 的宿主（Claude Code / Codex / Cherry Studio…）。宿主代理通过 `tools/list` **自动发现**工具并**自主决定**是否调用——无需加载任何 agy-first preset。保持完全宿主控制（`--dangerously-skip-permissions`、JSON 输出、超时强杀）；限流/网络失败在结果文本中附加防循环提示（MCP 无 UI 弹窗，回退决策交给调用方）。已通过真实握手（initialize → tools/list → tools/call）与真实 `agy_run` 端到端验证。
+- MCP 自检命令：`node mcp/agy-mcp-server.mjs --check`。
+- 注册文档：`mcp/README.md`（Claude Code / Codex / 通用 JSON 配置、`AGY_MCP_CWD` 环境变量）。
+
+### Fixed
+- MCP 服务器在 stdin 提前关闭时不再杀死进行中的 agy 调用（等待 `pendingCalls` 归零后才退出）。
+
+### Changed
+- 本地部署：新增 `cordis-agy` 合并 preset（cordis 自改能力 + agy 优先）并设为 DSH 默认；该副本移除了 `tool-cordis` 行，避免在已运行 cordis 的进程里重复注册 inspect provider 导致挂载失败（原因与恢复方法记录在组合文件注释中）。
+
 ## [1.0.0] - 2026
 
 首个发布版本。

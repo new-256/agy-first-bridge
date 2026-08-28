@@ -20,16 +20,17 @@
 - **回退机制（弹窗确认）**：当 agy 疑似被限流或网络不通时，自动弹出确认框，让用户选择「使用 DSH 本地 API 配置（回退）」/「重试 agy 一次」/「不回退」。
 - **实时状态灯**：浏览器会话标题栏右侧的一枚彩色指示灯，随 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退 / 就绪）。
 
-## 两种形态
+## 三种形态
 
-同一套逻辑提供两种落地形态，按需选择：
+同一套逻辑提供三种落地形态，按需选择：
 
 | 形态 | 位置 | 能力 | 是否随进程重启保留 | 状态灯 |
 | --- | --- | --- | --- | --- |
-| **持久 Agent Preset**（推荐） | [`preset/agy-first/`](preset/agy-first/) | 工具 + 优先策略 + 回退弹窗 | ✅ 是（落盘为 preset） | ❌ 无（Host 面组合不含浏览器 UI） |
+| **持久 Agent Preset**（DSH 内推荐） | [`preset/agy-first/`](preset/agy-first/) | 工具 + 优先策略 + 回退弹窗 | ✅ 是（落盘为 preset） | ❌ 无（Host 面组合不含浏览器 UI） |
 | **动态 Cordis 插件**（当前会话） | [`dynamic/`](dynamic/) | 工具 + 优先策略 + 回退弹窗 + **状态灯** | ❌ 否（进程内临时） | ✅ 有（需一次性审批） |
+| **MCP 服务器**（任何 MCP 宿主） | [`mcp/`](mcp/) | `agy_run` / `agy_continue` 通过 `tools/list` 被 Claude Code、Codex、Cherry Studio 等**自动发现**，由宿主代理自主决定是否调用 | ✅ 是（注册进客户端配置） | ❌ 无 |
 
-> **为什么状态灯只在动态形态里？** Agent Preset 是 **Host 面** 组合（`agent.cordis.yml` 挂载 Host 插件），其中的 `.mjs` 只在 Node 侧运行，天然不含浏览器 UI；而实时状态灯是 **Client 面**（浏览器 Slot）组件，需要通过动态 Cordis 插件的 Client 半加载（首次运行时在 GUI 里一次性审批）。回退弹窗是 Host 侧能力，**两种形态都具备**。
+> **为什么状态灯只在动态形态里？** Agent Preset 是 **Host 面** 组合（`agent.cordis.yml` 挂载 Host 插件），其中的 `.mjs` 只在 Node 侧运行，天然不含浏览器 UI；而实时状态灯是 **Client 面**（浏览器 Slot）组件，需要通过动态 Cordis 插件的 Client 半加载（首次运行时在 GUI 里一次性审批）。回退弹窗是 Host 侧能力，**两种形态都具备**；MCP 形态没有 UI，限流时改为在结果文本中附加「勿循环重试」提示，由调用方代理决定回退。
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
@@ -58,6 +59,17 @@ Copy-Item -Recurse .\preset\agy-first "$env:DSH_HOME\.agent-presets\agy-first"
 ### 方式 B：作为动态 Cordis 插件运行（含状态灯）
 
 在一个已加载 Cordis 能力的 DSH 会话里，用 `cordis_define` + `cordis_run` 定义并激活插件，Host 半用 [`dynamic/host.js`](dynamic/host.js)，Client 半用 [`dynamic/client.js`](dynamic/client.js)。首次运行 Client 半时，DSH GUI 会请求一次性审批，批准后状态灯即出现在会话标题栏。
+
+### 方式 C：作为 MCP 服务器注册（任何 MCP 宿主可发现）
+
+不需要 DSH 时，把 [`mcp/agy-mcp-server.mjs`](mcp/agy-mcp-server.mjs) 注册为 MCP 服务器，Claude Code / Codex / Cherry Studio 等宿主即可通过 `tools/list` 自动发现 `agy_run` / `agy_continue` 并自主决定调用：
+
+```bash
+# Claude Code 示例
+claude mcp add agy -- node "C:\Users\lcl\Desktop\agy-first-bridge\mcp\agy-mcp-server.mjs"
+```
+
+Codex / 通用 JSON 配置、环境变量与自检见 [`mcp/README.md`](mcp/README.md)。
 
 ## 依赖前提
 
@@ -96,13 +108,16 @@ agy-first-bridge/
 ├─ LICENSE
 ├─ .gitignore
 ├─ preset/
-│  └─ agy-first/                 # 持久 Agent Preset（推荐形态）
+│  └─ agy-first/                 # 持久 Agent Preset（DSH 内推荐形态）
 │     ├─ preset.yml              #   名称/描述
 │     ├─ agent.cordis.yml        #   组合：standard + 一行 agy 插件
 │     └─ agy-first-bridge.mjs    #   自包含、零依赖的 Host 插件模块
 ├─ dynamic/                      # 动态 Cordis 插件形态（含状态灯）
 │  ├─ host.js                    #   code.host 函数体
 │  └─ client.js                  #   code.client 函数体（浏览器状态灯）
+├─ mcp/                          # MCP 服务器（任何 MCP 宿主可发现）
+│  ├─ agy-mcp-server.mjs         #   零依赖 stdio MCP 服务器
+│  └─ README.md                  #   注册方法（Claude Code/Codex/通用）
 └─ docs/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
@@ -122,7 +137,7 @@ agy-first-bridge/
 
 `agy-first-bridge` is a Cordis plugin for the **DeepSeek Harness (DSH)**. It registers two model tools (`agy_run`, `agy_continue`) that dispatch real work to the local **`agy` CLI** under full DSH control (`--dangerously-skip-permissions`, so agy never prompts), and injects an *agy-first* policy so the model prefers agy across every mode. When agy is **rate-limited or the network is down**, it pops a confirmation dialog offering the **DSH local API config** as a fallback, and it renders a **live status light** in the session header showing whether agy is currently working.
 
-Two forms are shipped: a **persistent agent preset** (`preset/agy-first/`, survives restart, host-side fallback included) and a **dynamic Cordis plugin** (`dynamic/`, adds the browser status light, needs a one-time approval).
+Two forms are shipped: a **persistent agent preset** (`preset/agy-first/`, survives restart, host-side fallback included) and a **dynamic Cordis plugin** (`dynamic/`, adds the browser status light, needs a one-time approval). A third form, [`mcp/`](mcp/), is a zero-dependency **MCP server** that exposes `agy_run` / `agy_continue` to *any* MCP-capable host (Claude Code, Codex, Cherry Studio, …), where the agent discovers the tools itself and decides when to call them — even without any agy-first preset.
 
 👉 **Full English documentation: [README.en.md](README.en.md)** — with English guides under [`docs/en/`](docs/en/) (install, architecture, fallback & indicator).
 

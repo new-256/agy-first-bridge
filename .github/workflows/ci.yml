@@ -29,6 +29,11 @@ jobs:
       - name: Syntax-check preset module
         run: node --check preset/agy-first/agy-first-bridge.mjs
 
+      - name: Syntax-check and self-test MCP server
+        run: |
+          node --check mcp/agy-mcp-server.mjs
+          node mcp/agy-mcp-server.mjs --check
+
       - name: Syntax-check dynamic bodies
         shell: bash
         run: |
