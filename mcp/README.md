@@ -54,6 +54,19 @@ args = ["C:\\Users\\lcl\\Desktop\\agy-first-bridge\\mcp\\agy-mcp-server.mjs"]
 
 - `AGY_MCP_CWD` — default working directory for agy calls that do not pass `cwd` (default `C:\Users\lcl\Desktop\DSH`).
 
+### Disclose-and-prefer policy for external agents
+
+Install [`MCP-POLICY.md`](../MCP-POLICY.md) (bilingual) into the global instruction
+file of each MCP host so the agent **prefers** `mcp__agy__*` for real work and never
+loops on rate-limit failures:
+
+```bash
+copy MCP-POLICY.md %USERPROFILE%\.claude\CLAUDE.md   # Claude Code (global memory)
+copy MCP-POLICY.md %USERPROFILE%\.codex\AGENTS.md    # Codex
+```
+
+On this development machine both files are already installed.
+
 ### DSH itself (via `@deepseek-ai/dsh-mcp-client`)
 
 Inside DSH, the same bridge is registered in the `cordis-agy` preset with one plugin row, so the model also sees the server-qualified native tools `mcp__agy__agy_run` / `mcp__agy__agy_continue`:

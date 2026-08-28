@@ -105,8 +105,13 @@ Codex / 通用 JSON 配置、环境变量与自检见 [`mcp/README.md`](mcp/READ
 ```
 agy-first-bridge/
 ├─ README.md
+├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
+├─ package.json                 # 版本元数据（v1.2.0，Node ≥18）
+├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
+├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
+├─ assets/indicator-states.svg
 ├─ preset/
 │  └─ agy-first/                 # 持久 Agent Preset（DSH 内推荐形态）
 │     ├─ preset.yml              #   名称/描述
@@ -117,13 +122,26 @@ agy-first-bridge/
 │  └─ client.js                  #   code.client 函数体（浏览器状态灯）
 ├─ mcp/                          # MCP 服务器（任何 MCP 宿主可发现）
 │  ├─ agy-mcp-server.mjs         #   零依赖 stdio MCP 服务器
-│  └─ README.md                  #   注册方法（Claude Code/Codex/通用）
+│  └─ README.md                  #   注册方法（Claude Code/Codex/DSH/通用）
 └─ docs/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   └─ CHANGELOG.md
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.2.0）
+   └─ en/                        # 英文文档
 ```
+
+## 版本与发布
+
+版本管理遵循语义化版本（`package.json` + Git tag + GitHub Release）：
+
+| 版本 | 内容 |
+| --- | --- |
+| [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH 随软件自启（默认 preset `cordis-agy`）、DSH 内 MCP 注册、外部软件 MCP 注册（Claude Code/Codex）、披露并优先策略、版本管理 |
+| [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | MCP 服务器（零依赖、任何 MCP 宿主可发现）、CI 扩展 |
+| [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | agy 桥接工具、DSH 完全控制、回退弹窗、状态灯、两种形态、文档与 CI |
+
+详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
 ## 安全说明
 

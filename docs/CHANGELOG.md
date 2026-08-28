@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.2.0] - 2026
+
+### Added
+- **DSH 随软件启动自动加载**：本地部署 `agent-presets.default` 已设为 `cordis-agy`（合并 preset：cordis 自改能力 + agy 优先 + MCP 桥）。新会话创建时自动挂载，无需手动选择。
+- **DSH 内 MCP 补充注册**：`cordis-agy` preset 增加 `@deepseek-ai/dsh-mcp-client` 行，把同一 MCP 服务器注册为 DSH 原生工具（`mcp__agy__agy_run` / `mcp__agy__agy_continue`），`failOnStartupError: false` 保证 agy 缺失不阻塞会话启动。
+- **外部软件 MCP 注册**：Claude Code（`claude mcp add -s user agy`，已 ✓ Connected）与 Codex（`~/.codex/config.toml` 的 `[mcp_servers.agy]`，已 enabled）。
+- **披露并优先使用策略**：`MCP-POLICY.md`（中英双语）安装到 `~/.claude/CLAUDE.md` 与 `~/.codex/AGENTS.md`，要求外部代理优先调用 `mcp__agy__*` 做实际工作、禁止限流循环重试。
+- **版本管理**：新增 `package.json`（v1.2.0，Node ≥18）；MCP 服务器自报版本升至 1.2.0；Git tag `v1.2.0` + GitHub Release。
+
+### Changed
+- MCP 服务器版本常量 `1.1.0` → `1.2.0`。
+- 服务器稳定副本统一存放于 `dsh-home\bin\agy-mcp-server.mjs`（仓库删除不影响已注册的三端）。
+
 ## [1.1.0] - 2026
 
 ### Added

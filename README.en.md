@@ -95,6 +95,8 @@ agy-first-bridge/
 ├─ README.md / README.en.md
 ├─ LICENSE
 ├─ .gitignore
+├─ package.json                    # version metadata (v1.2.0, Node >=18)
+├─ MCP-POLICY.md                   # disclose-and-prefer policy for external agents (also ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md)
 ├─ .github/workflows/ci.yml       # node --check + YAML validation
 ├─ assets/indicator-states.svg    # status-light states diagram
 ├─ preset/
@@ -105,10 +107,23 @@ agy-first-bridge/
 ├─ dynamic/                        # dynamic Cordis plugin form (with status light)
 │  ├─ host.js                      #   code.host body
 │  └─ client.js                    #   code.client body (browser status light)
+├─ mcp/                            # MCP server (discoverable by any MCP host)
+│  ├─ agy-mcp-server.mjs           #   zero-dependency stdio MCP server
+│  └─ README.md                    #   registration (Claude Code / Codex / DSH / generic)
 └─ docs/
    ├─ INSTALL.md / ARCHITECTURE.md / FALLBACK-AND-INDICATOR.md / CHANGELOG.md   (中文)
    └─ en/INSTALL.md / ARCHITECTURE.md / FALLBACK-AND-INDICATOR.md               (English)
 ```
+
+## Versions & releases
+
+Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/CHANGELOG.md](docs/CHANGELOG.md)):
+
+| Version | Highlights |
+| --- | --- |
+| [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH auto-start (default preset `cordis-agy`), in-DSH MCP registration, external MCP registration (Claude Code / Codex), disclose-and-prefer policy, version management |
+| [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | Zero-dependency MCP server discoverable by any MCP host, CI extension |
+| [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | agy bridge tools, full DSH control, fallback dialog, status light, both forms, docs & CI |
 
 ## Security notes
 
