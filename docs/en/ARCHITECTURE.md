@@ -56,7 +56,7 @@ Host and Client communicate only through package-private JSON RPC: the host expo
 - The background path runs through `jobs.start({ kind:'bash', owner: exec.agent, run() {...} })`; `run()` returns `{ cancel, done }`, and `done` parses the result and updates status (a live parser is attached there too).
 - `parseAgyJson()` tolerantly parses agy's `stream-json` output (scanning backward for the trailing `{"event":"result","result":{...}}` line, tolerating log lines; whole-string JSON as a fallback).
 - The result is a single plain JSON object; `render()` produces a human-readable tool card.
-- `agy_status` tool / RPC returns the plain scalar snapshot `{ state, running, current, trail, lastStatus, lastConversationId, updatedAt }`, where `current` is the step executing right now (tool name + arguments, or agent_response thinking/typing).
+- `agy_status` tool / RPC returns the plain scalar snapshot `{ state, running, current, trail, lastStatus, lastConversationId, updatedAt, projects[] }`; `projects[]` is sectioned per project (cwd), each section carrying that project's `current` (the step executing right now — tool name + arguments, or agent_response thinking/typing), `trail`, `lastStatus`, etc.; the top-level fields are the global aggregation (backward compatible). A `cwd` argument filters to a single project.
 
 ### Key constraints (sandbox vs real Node)
 
@@ -74,7 +74,7 @@ Host and Client communicate only through package-private JSON RPC: the host expo
 
 - `inject: ['timer']`, with `ctx.get('slots')` read optionally.
 - Injects a stylesheet (with a pulse animation) via `styles.insert(css)`, wrapped in `ctx.effect` so it is cleaned up on unload.
-- The `Indicator` component polls `host.call('agy_status')` every 1.2s inside `React.useEffect` via `ctx.interval(tick, 1200)`, painting a coloured dot + label from `state`; its tooltip additionally shows the `current` step and recent `trail` from the snapshot; the timer is disposed on unmount.
+- The `Indicator` component polls `host.call('agy_status')` every 1.2s inside `React.useEffect` via `ctx.interval(tick, 1200)`, rendering **one pill per project** (snapshot `projects[]`), each coloured by that project's `state` and labelled with the project name; its tooltip shows that project's `current` step and recent `trail`; the timer is disposed on unmount.
 - Registered into the Slot `conversation.session.header.utilities` (session scope, list kind) with `id: 'agy-indicator'`.
 
 ## Lifecycle and reversibility

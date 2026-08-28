@@ -85,18 +85,18 @@ All colours come from DSH theme tokens, so the light adapts to light/dark automa
 
 ### Data source
 
-The host keeps an in-memory status snapshot, updated before and after each agy call:
+The host keeps an in-memory status snapshot **grouped by project (cwd)**, updating the relevant project before and after each agy call:
 
 ```js
-const status = { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, current, trail, updatedAt }
-begin()  // running++, state='running'
-end(res) // running--, set ok/failed/fallback from the result; clear current
-foldStepUpdate(ev) // parse stream-json step_update events line by line → current / trail
+projects[cwd] = { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, current, trail, updatedAt }
+begin(cwd)          // that project running++, state='running'
+end(res, cwd)       // that project running--, set ok/failed/fallback from the result; clear current
+foldStepUpdate(ev, cwd) // parse stream-json step_update events line by line → that project's current / trail
 ```
 
-`current` is the step agy is **executing right now** (tool name + arguments, or agent_response thinking/typing); `trail` is the recent step history. Both are filled incrementally while the run is in flight, so the indicator tooltip and the `agy_status` tool can show "what agy is doing" *during* a run, not only after it.
+Each project's `current` is the step that project's agy is **executing right now** (tool name + arguments, or agent_response thinking/typing); `trail` is its recent step history. Both are filled incrementally while the run is in flight, so the indicator (one pill per project) and the `agy_status` tool can show "what agy is doing" *during* a run, not only after it.
 
-The host exposes the read-only snapshot via `harness.handle('agy_status', () => snapshot())`; the client component pulls it every 1.2s with `ctx.interval` + `host.call('agy_status')` and re-renders, with the tooltip showing `current` and the recent `trail`. This is standard Client→Host package-private RPC, and the snapshot carries only scalar fields — no references to host live objects.
+The host exposes the read-only snapshot (global aggregation + `projects[]`) via `harness.handle('agy_status', () => snapshot())`; the client component pulls it every 1.2s with `ctx.interval` + `host.call('agy_status')` and re-renders per project, with each tooltip showing that project's `current` and recent `trail`. This is standard Client→Host package-private RPC, and the snapshot carries only scalar fields — no references to host live objects.
 
 ### One-time approval
 

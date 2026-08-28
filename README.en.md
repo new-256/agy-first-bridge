@@ -18,8 +18,8 @@
 On top of that it implements the key capabilities that motivated the project:
 
 - **Fallback mechanism (confirmation dialog):** when agy looks rate-limited or the network is unreachable, a dialog pops up offering *"use the DSH local API config (fall back)" / "retry agy once" / "do not fall back"*.
-- **Live status light:** a coloured indicator on the right of the browser session header that reflects agy activity in real time (working / ok / failed / fallback / idle); hovering it shows the step agy is currently executing.
-- **Live observation (`agy_status`):** the `agy_status` tool returns a snapshot of what agy is doing RIGHT NOW — the current step (tool name + arguments, or thinking/typing), the recent step trail, and the last completed run. Callable mid-flight, no waiting.
+- **Live status lights (per project):** coloured indicators on the right of the browser session header — **one per project (working directory)** — reflecting each project's agy activity in real time (working / ok / failed / fallback); hovering shows the step that project's agy is currently executing.
+- **Live observation (`agy_status`):** the `agy_status` tool returns a snapshot of what agy is doing RIGHT NOW, sectioned per project — each project's current step (tool name + arguments, or thinking/typing), recent step trail, last completed run. Optional `cwd` filters to one project. Callable mid-flight, no waiting.
 
 ## Three forms
 
@@ -77,7 +77,7 @@ In a DSH session that has Cordis capabilities loaded, define and activate the pl
 
 `agy_continue(prompt, conversationId? | latest?, ...)` — continue an existing agy conversation; other parameters as above.
 
-`agy_status()` — **live observation**: returns a snapshot of what agy is doing right now (`{ state, running, current, trail, lastStatus, lastConversationId, updatedAt }`). `current` is the step currently executing (tool name + arguments, or agent_response thinking/typing); `trail` is the recent step history. Callable while `agy_run`/`agy_continue` is in flight, no waiting.
+`agy_status(cwd?)` — **live observation**: returns a snapshot of what agy is doing right now (`{ state, running, current, trail, lastStatus, lastConversationId, updatedAt, projects[] }`). `projects[]` is sectioned per project (working directory): `current` is the step that project is executing right now (tool name + arguments, or agent_response thinking/typing); `trail` is its recent step history. Optional `cwd` filters to one project. Callable while `agy_run`/`agy_continue` is in flight, no waiting.
 
 ## DSH fully controls agy
 
@@ -99,7 +99,7 @@ agy-first-bridge/
 ├─ README.md / README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                    # version metadata (v1.3.0, Node >=18)
+├─ package.json                    # version metadata (v1.4.0, Node >=18)
 ├─ MCP-POLICY.md                   # disclose-and-prefer policy for external agents (also ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md)
 ├─ .github/workflows/ci.yml       # node --check + YAML validation
 ├─ assets/indicator-states.svg    # status-light states diagram
@@ -125,6 +125,7 @@ Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/C
 
 | Version | Highlights |
 | --- | --- |
+| [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | **Per-project status lights**: snapshots grouped by project (cwd), one light per project in the UI, `agy_status` supports `cwd` filtering, verified with two concurrent projects |
 | [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **Live observation**: all forms run agy with `stream-json` and parse `step_update` events; new `agy_status` tool (current step / trail / last run); status-light tooltip shows the current step |
 | [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH auto-start (default preset `cordis-agy`), in-DSH MCP registration, external MCP registration (Claude Code / Codex), disclose-and-prefer policy, version management |
 | [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | Zero-dependency MCP server discoverable by any MCP host, CI extension |

@@ -23,7 +23,8 @@ edit files, run builds, and investigate multi-file code.
   `conversationId` from the previous result (or `latest: true`).
 - When you delegate to a sub-agent, tell it to also prefer `agy_run`.
 - While `agy_run`/`agy_continue` is running, you may call `agy_status` any time
-  to see what agy is doing right now (current tool/step, recent trail) without
+  to see what agy is doing right now — reported per project (working
+  directory), each with its current tool/step and recent trail — without
   waiting for it to finish.
 
 ## Fallback — never loop

@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.4.0] - 2026
+
+### Added
+- **UI 状态灯按项目分别显示（per-project status lights）**：状态快照按**项目（工作目录 cwd）**分组。DSH 会话标题栏渲染**每个项目一盏灯**（项目名 + 各自状态：工作中/成功/失败/回退），tooltip 显示该项目当前步骤与最近轨迹；`agy_status` 工具 / MCP 工具按项目分节返回，并支持 `cwd` 参数只查某个项目。
+- 并发验证：两个 agy 任务在不同 cwd 同时运行，快照分别列出两个项目，各自的运行计数、当前步骤、轨迹与最近结果互不混淆。
+
+### Changed
+- 状态追踪由全局单例改为 per-project 表（`projects[cwd]`）+ 全局聚合（顶层字段保留，向后兼容）；项目按最近活动排序，最多保留 12 个项目。
+
 ## [1.3.0] - 2026
 
 ### Added

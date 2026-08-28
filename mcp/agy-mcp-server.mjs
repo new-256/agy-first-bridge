@@ -36,7 +36,7 @@ import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.3.0'
+const VERSION = '1.4.0'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
@@ -60,15 +60,32 @@ function clampInt(v, def, min, max) {
   return i
 }
 
-// ── live status snapshot (what agy is doing right now) ───────────────────────
+// ── live status snapshot: per-project + global aggregation ───────────────────
+// Each agy run belongs to a project (its cwd). agy_status reports one section
+// per project; the global row aggregates everything (backward compatible).
 const MAX_TRAIL = 12
 const MAX_ARG_LEN = 120
-const status = {
-  runningCount: 0,
-  current: null,      // { tool, args, stepIndex, since }
-  trail: [],          // recent step events (tool / agent_response), newest last
-  last: null,         // { status, conversationId, at }
-  updatedAt: 0
+const MAX_PROJECTS = 12
+const projects = Object.create(null) // cwd -> project record
+
+function projectName(cwd) {
+  const s = String(cwd || '')
+  const parts = s.split(/[\\/]/).filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : s
+}
+function ensureProject(cwd) {
+  const key = String(cwd || CWD_FALLBACK)
+  let p = projects[key]
+  if (!p) {
+    if (Object.keys(projects).length >= MAX_PROJECTS) {
+      const idle = Object.keys(projects).filter((k) => projects[k].running === 0)
+      const victim = (idle.length ? idle : Object.keys(projects)).sort((a, b) => projects[a].updatedAt - projects[b].updatedAt)[0]
+      delete projects[victim]
+    }
+    p = { cwd: key, name: projectName(key), state: 'idle', running: 0, current: null, trail: [], last: null, updatedAt: 0 }
+    projects[key] = p
+  }
+  return p
 }
 
 function nowIso() { return new Date().toISOString() }
@@ -84,46 +101,75 @@ function summarizeArgs(parameters) {
   return out
 }
 
-function foldStepUpdate(ev) {
+function foldStepUpdate(ev, cwd) {
   const s = ev && ev.step_update
   if (!s) return
-  status.updatedAt = nowIso()
+  const p = ensureProject(cwd)
+  p.updatedAt = nowIso()
   if (s.step_type === 'tool') {
     const tool = s.tool_name || (s.tool_info && s.tool_info.name) || 'tool'
     const args = summarizeArgs(s.tool_info && s.tool_info.parameters)
     const entry = { stepIndex: s.step_index, state: s.state, tool, args, at: nowIso() }
-    status.trail.push(entry)
-    if (status.trail.length > MAX_TRAIL) status.trail.shift()
+    p.trail.push(entry)
+    if (p.trail.length > MAX_TRAIL) p.trail.shift()
     if (s.state === 'ACTIVE') {
-      status.current = { tool, args, stepIndex: s.step_index, since: nowIso() }
-    } else if (status.current && status.current.stepIndex === s.step_index) {
-      status.current = null
+      p.current = { tool, args, stepIndex: s.step_index, since: nowIso() }
+    } else if (p.current && p.current.stepIndex === s.step_index) {
+      p.current = null
     }
   } else if (s.step_type === 'agent_response' && s.state === 'ACTIVE' && s.text_delta) {
-    status.current = { tool: 'agent_response', args: { text_delta: String(s.text_delta).slice(0, MAX_ARG_LEN) }, stepIndex: s.step_index, since: nowIso() }
+    p.current = { tool: 'agent_response', args: { text_delta: String(s.text_delta).slice(0, MAX_ARG_LEN) }, stepIndex: s.step_index, since: nowIso() }
   }
 }
 
-function foldResult(parsed) {
-  status.updatedAt = nowIso()
-  status.last = {
+function foldResult(parsed, cwd) {
+  const p = ensureProject(cwd)
+  p.updatedAt = nowIso()
+  p.last = {
     status: typeof parsed.status === 'string' ? parsed.status : 'UNKNOWN',
     conversationId: typeof parsed.conversation_id === 'string' ? parsed.conversation_id : null,
     at: nowIso()
   }
+  p.state = p.running > 0 ? 'running' : (p.last && p.last.status === 'SUCCESS' ? 'ok' : (p.last ? 'failed' : 'idle'))
 }
 
-function snapshot() {
-  const s = {
-    state: status.runningCount > 0 ? 'running' : 'idle',
-    runningCount: status.runningCount,
-    current: status.current,
-    trail: status.trail.slice(-MAX_TRAIL),
-    last: status.last,
-    updatedAt: status.updatedAt
+function globalSnapshot() {
+  const list = Object.keys(projects).map((k) => projects[k])
+  let runningCount = 0, current = null, trail = [], last = null, updatedAt = 0
+  for (const p of list) {
+    runningCount += p.running
+    if (p.updatedAt > updatedAt) updatedAt = p.updatedAt
+    if (p.running > 0 && !current && p.current) current = p.current
+    if (p.last && (!last || (p.last.at > last.at))) last = p.last
+    for (const e of p.trail) trail.push(e)
+  }
+  trail.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  trail = trail.slice(-MAX_TRAIL)
+  return {
+    state: runningCount > 0 ? 'running' : (last ? (last.status === 'SUCCESS' ? 'ok' : 'failed') : 'idle'),
+    runningCount,
+    current,
+    trail,
+    last,
+    updatedAt
+  }
+}
+
+function snapshot(filterCwd) {
+  const g = globalSnapshot()
+  let list = Object.keys(projects).map((k) => projects[k]).sort((a, b) => (b.updatedAt < a.updatedAt ? -1 : b.updatedAt > a.updatedAt ? 1 : 0))
+  if (filterCwd) list = list.filter((p) => p.cwd === String(filterCwd))
+  const out = {
+    state: g.state,
+    runningCount: g.runningCount,
+    current: g.current,
+    trail: g.trail,
+    last: g.last,
+    updatedAt: g.updatedAt,
+    projects: list.map((p) => ({ cwd: p.cwd, name: p.name, state: p.state, running: p.running, current: p.current, trail: p.trail.slice(-MAX_TRAIL), last: p.last, updatedAt: p.updatedAt }))
   }
   // owned JSON only — no references to live objects
-  return JSON.parse(JSON.stringify(s))
+  return JSON.parse(JSON.stringify(out))
 }
 
 // ── agy parsing (stream-json events + final result) ──────────────────────────
@@ -200,7 +246,10 @@ function runAgy(args) {
       resolve({ ok: false, status: 'SPAWN_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: args.mode || 'accept-edits', stderr: String(e && e.message || e) })
       return
     }
-    status.runningCount++
+    const p = ensureProject(cwd)
+    p.running += 1
+    p.state = 'running'
+    p.updatedAt = nowIso()
     let out = '', err = ''
     let killed = false
     const timer = setTimeout(() => { killed = true; try { child.kill() } catch {} }, (timeoutSec + 60) * 1000)
@@ -218,24 +267,25 @@ function runAgy(args) {
         if (!t.startsWith('{')) continue
         try {
           const obj = JSON.parse(t)
-          if (obj && obj.event === 'step_update') foldStepUpdate(obj)
+          if (obj && obj.event === 'step_update') foldStepUpdate(obj, cwd)
         } catch {}
       }
     })
     child.stderr.on('data', (d) => { err += d; if (err.length > 1_000_000) err = err.slice(-500_000) })
     child.on('error', (e) => {
       clearTimeout(timer)
-      status.runningCount = Math.max(0, status.runningCount - 1)
-      status.updatedAt = nowIso()
+      p.running = Math.max(0, p.running - 1)
+      p.state = 'failed'
+      p.updatedAt = nowIso()
       resolve({ ok: false, status: 'AGY_UNAVAILABLE', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: args.mode || 'accept-edits', stderr: 'agy spawn failed: ' + String(e && e.message || e) })
     })
     child.on('close', (code) => {
       clearTimeout(timer)
-      status.runningCount = Math.max(0, status.runningCount - 1)
-      status.current = null
+      p.running = Math.max(0, p.running - 1)
+      p.current = null
       const outcome = { exitCode: killed ? 124 : code }
       const parsed = parseAgyJson(out)
-      if (parsed) foldResult(parsed)
+      if (parsed) foldResult(parsed, cwd)
       const res = buildResult(parsed, outcome, args.mode || 'accept-edits', err, out)
       if (killed && !res.ok) res.stderr = (res.stderr ? res.stderr + ' ' : '') + '[killed by timeout guard]'
       resolve(res)
@@ -258,24 +308,38 @@ function textResult(res) {
   return { content: [{ type: 'text', text: head + (body ? '\n\n' + body : '') + note }] }
 }
 
-function statusText() {
-  const s = snapshot()
+function statusText(filterCwd) {
+  const s = snapshot(filterCwd)
   const lines = []
-  lines.push('agy status: ' + s.state + (s.runningCount > 0 ? ' (' + s.runningCount + ' running)' : ''))
-  if (s.current) {
-    const c = s.current
-    lines.push('current: step ' + c.stepIndex + ' → ' + c.tool + (c.args ? ' ' + JSON.stringify(c.args) : ''))
-  } else if (s.state === 'running') {
-    lines.push('current: (starting / thinking)')
-  }
-  if (s.trail.length) {
-    lines.push('recent steps:')
-    for (const e of s.trail.slice(-6)) {
-      const a = e.args ? ' ' + JSON.stringify(e.args) : ''
-      lines.push('  [' + e.state + '] step ' + e.stepIndex + ' ' + e.tool + a)
+  lines.push('agy status: ' + s.state + (s.runningCount > 0 ? ' (' + s.runningCount + ' running)' : '') + (s.projects.length > 1 ? ' across ' + s.projects.length + ' projects' : ''))
+  if (s.projects.length) {
+    for (const p of s.projects) {
+      const cur = p.current ? (' step ' + p.current.stepIndex + ' → ' + p.current.tool + (p.current.args ? ' ' + JSON.stringify(p.current.args) : '')) : (p.running > 0 ? ' (starting / thinking)' : '')
+      lines.push('· ' + p.name + ' [' + p.state + (p.running > 0 ? ' ×' + p.running : '') + ']' + cur + (p.last ? ' | last=' + p.last.status + (p.last.conversationId ? ' ' + p.last.conversationId.slice(0, 8) : '') : ''))
+      if (p.trail.length) {
+        lines.push('    steps:')
+        for (const e of p.trail.slice(-3)) {
+          const a = e.args ? ' ' + JSON.stringify(e.args) : ''
+          lines.push('      [' + e.state + '] step ' + e.stepIndex + ' ' + e.tool + a)
+        }
+      }
     }
+  } else {
+    if (s.current) {
+      const c = s.current
+      lines.push('current: step ' + c.stepIndex + ' → ' + c.tool + (c.args ? ' ' + JSON.stringify(c.args) : ''))
+    } else if (s.state === 'running') {
+      lines.push('current: (starting / thinking)')
+    }
+    if (s.trail.length) {
+      lines.push('recent steps:')
+      for (const e of s.trail.slice(-6)) {
+        const a = e.args ? ' ' + JSON.stringify(e.args) : ''
+        lines.push('  [' + e.state + '] step ' + e.stepIndex + ' ' + e.tool + a)
+      }
+    }
+    if (s.last) lines.push('last: ' + s.last.status + (s.last.conversationId ? ' conv=' + s.last.conversationId : '') + ' @ ' + s.last.at)
   }
-  if (s.last) lines.push('last: ' + s.last.status + (s.last.conversationId ? ' conv=' + s.last.conversationId : '') + ' @ ' + s.last.at)
   if (s.updatedAt) lines.push('updatedAt: ' + s.updatedAt)
   return lines.join('\n')
 }
@@ -318,14 +382,15 @@ const TOOLS = [
   },
   {
     name: 'agy_status',
-    description: 'Read a live snapshot of what the local agy agent is currently doing: running count, the current step (tool name + arguments being executed, or agent_response thinking/typing), the recent step trail (tools executed, done/error), and the last completed run status + conversation id. Call this to check on an in-flight agy_run/agy_continue without waiting for it to finish.',
-    inputSchema: { type: 'object', properties: {} }
+    description: 'Read a live snapshot of what the local agy agent is currently doing. Returns one section per project (working directory): running count, the current step (tool name + arguments being executed, or agent_response thinking/typing), the recent step trail (tools executed, done/error), and the last completed run status + conversation id. Optional cwd filters to a single project. Call this to check on an in-flight agy_run/agy_continue without waiting for it to finish.',
+    inputSchema: { type: 'object', properties: { cwd: { type: 'string', description: 'Optional: filter the snapshot to a single project (working directory).' } } }
   }
 ]
 
 async function callTool(name, args) {
   if (name === 'agy_status') {
-    return { content: [{ type: 'text', text: statusText() }] }
+    const a = args || {}
+    return { content: [{ type: 'text', text: statusText(a.cwd) }] }
   }
   const a = args || {}
   if (!a.prompt || !String(a.prompt).trim()) {

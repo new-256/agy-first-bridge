@@ -8,27 +8,38 @@ This directory ships a **standalone, dependency-free MCP (Model Context Protocol
 | --- | --- |
 | `agy_run` | Dispatch a coding/build/debug/investigation task to the local agy CLI and return its final answer. |
 | `agy_continue` | Continue an existing agy conversation (`conversationId`, or `latest: true`). |
-| `agy_status` | **Live observation**: what agy is doing RIGHT NOW (running count, current step = tool name + arguments or thinking/typing, recent step trail, last completed run). Call it mid-flight to watch progress. |
+| `agy_status` | **Live observation**: what agy is doing RIGHT NOW, **sectioned per project (working directory)** — each project's running count, current step (tool name + arguments or thinking/typing), recent step trail, last completed run. Optional `cwd` filters to one project. Call it mid-flight to watch progress. |
 
 **Why:** the DSH plugin (preset / dynamic form) only exists inside DSH sessions. With the MCP server, *any* MCP-capable host — Claude Code, Codex, Cherry Studio, Cline, etc. — **discovers the tools itself** (`tools/list`) and decides when to call them, even when no "agy-first" preset is loaded. The agent stays in control of *whether* to delegate to agy; the server guarantees *how* agy runs.
 
 ## Live observation
 
 agy runs with `--output-format stream-json`; each `step_update` event is parsed
-on arrival and folded into an in-memory snapshot. Any agent can call
-`agy_status` while `agy_run`/`agy_continue` is still in flight:
+on arrival and folded into an in-memory snapshot **grouped by project (cwd)**.
+Any agent can call `agy_status` while `agy_run`/`agy_continue` is still in
+flight — parallel runs in different projects appear as separate sections:
 
 ```
-agy status: running (1 running)
-current: step 4 → run_command {"CommandLine":"pwsh -Command Get-ChildItem …"}
-recent steps:
-  [ACTIVE] step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
-  [DONE]   step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
-last: ERROR conv=753f2cda-… @ 2026-08-28T10:27:55.958Z
+agy status: running (2 running) across 2 projects
+· DSH [running ×1] (starting / thinking)
+· agy-first-bridge [running ×1] (starting / thinking)
 ```
 
-No polling loops needed — the snapshot is owned by the server process and
-exposed on demand.
+After the runs, each project keeps its own trail and last result:
+
+```
+agy status: ok across 2 projects
+· agy-first-bridge [ok] | last=SUCCESS 3bd8f424
+    steps:
+      [DONE] step 6 run_command {"CommandLine":"Get-ChildItem -Force"}
+      [DONE] step 8 write_to_file {"TargetFile":"…\\implementation_plan.md"}
+· DSH [ok] | last=SUCCESS 81ebb6ee
+    steps:
+      [DONE] step 4 run_command {"CommandLine":"Get-ChildItem -File | Measure-Object …"}
+```
+
+Pass `cwd` to `agy_status` to see only one project. No polling loops needed —
+the snapshot is owned by the server process and exposed on demand.
 
 **Why:** the DSH plugin (preset / dynamic form) only exists inside DSH sessions. With the MCP server, *any* MCP-capable host — Claude Code, Codex, Cherry Studio, Cline, etc. — **discovers the tools itself** (`tools/list`) and decides when to call them, even when no "agy-first" preset is loaded. The agent stays in control of *whether* to delegate to agy; the server guarantees *how* agy runs.
 
@@ -124,24 +135,34 @@ A full end-to-end probe (initialize → tools/list → a real `agy_run` returnin
 | --- | --- |
 | `agy_run` | 把编码/构建/调试/排查任务派发给本机 agy CLI，返回最终答复 |
 | `agy_continue` | 继续已有的 agy 会话（`conversationId` 或 `latest: true`） |
-| `agy_status` | **实时观察**：agy 此刻在干什么（运行计数、当前步骤 = 工具名+参数或思考/打字中、最近步骤轨迹、最近完成运行）。运行中随时可查，无需等待结束 |
+| `agy_status` | **实时观察**：agy 此刻在干什么，**按项目（工作目录）分节** —— 每个项目的运行计数、当前步骤（工具名+参数或思考/打字中）、最近步骤轨迹、最近完成运行。可选 `cwd` 只看某个项目。运行中随时可查，无需等待结束 |
 
 **用途：** DSH 插件（preset / 动态形态）只在 DSH 会话内存在。有了 MCP 服务器，任何支持 MCP 的宿主（Claude Code、Codex、Cherry Studio、Cline 等）都能通过 `tools/list` **自行发现**这些工具，并**自主决定**何时调用——即使当前没有加载任何 "agy-first" preset。是否委派给 agy 由调用方代理决定；服务器只保证 agy 的运行方式。
 
 ## 实时观察
 
-agy 以 `--output-format stream-json` 运行；每个 `step_update` 事件到达即被解析并入内存快照。`agy_run`/`agy_continue` 仍在进行时，任何代理都能调用 `agy_status`：
+agy 以 `--output-format stream-json` 运行；每个 `step_update` 事件到达即被解析并入内存快照，**按项目（cwd）分组**。`agy_run`/`agy_continue` 仍在进行时，任何代理都能调用 `agy_status` —— 不同项目中的并行运行显示为独立分节：
 
 ```
-agy status: running (1 running)
-current: step 4 → run_command {"CommandLine":"pwsh -Command Get-ChildItem …"}
-recent steps:
-  [ACTIVE] step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
-  [DONE]   step 2 list_dir {"DirectoryPath":"C:\\Users\\lcl\\Desktop"}
-last: ERROR conv=753f2cda-… @ 2026-08-28T10:27:55.958Z
+agy status: running (2 running) across 2 projects
+· DSH [running ×1] (starting / thinking)
+· agy-first-bridge [running ×1] (starting / thinking)
 ```
 
-无需轮询——快照归服务器进程所有，按需返回。
+运行结束后，每个项目保留各自的轨迹与最近结果：
+
+```
+agy status: ok across 2 projects
+· agy-first-bridge [ok] | last=SUCCESS 3bd8f424
+    steps:
+      [DONE] step 6 run_command {"CommandLine":"Get-ChildItem -Force"}
+      [DONE] step 8 write_to_file {"TargetFile":"…\\implementation_plan.md"}
+· DSH [ok] | last=SUCCESS 81ebb6ee
+    steps:
+      [DONE] step 4 run_command {"CommandLine":"Get-ChildItem -File | Measure-Object …"}
+```
+
+给 `agy_status` 传 `cwd` 可只看某个项目。无需轮询——快照归服务器进程所有，按需返回。
 
 **用途：** DSH 插件（preset / 动态形态）只在 DSH 会话内存在。有了 MCP 服务器，任何支持 MCP 的宿主（Claude Code、Codex、Cherry Studio、Cline 等）都能通过 `tools/list` **自行发现**这两个工具，并**自主决定**何时调用——即使当前没有加载任何 "agy-first" preset。是否委派给 agy 由调用方代理决定；服务器只保证 agy 的运行方式。
 

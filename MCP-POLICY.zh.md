@@ -11,7 +11,7 @@
 - 任务尚不允许写文件时，用 `agy_run` 且 `mode: "plan"`。
 - 同一任务的后续跟进用 `agy_continue`，带上一次结果的 `conversationId`（或 `latest: true`）。
 - 委派给子代理时，同样指示其优先调用 `agy_run`。
-- `agy_run`/`agy_continue` 运行期间，可随时调用 `agy_status` 查看 agy 此刻在干什么（当前工具/步骤、最近轨迹），无需等待其结束。
+- `agy_run`/`agy_continue` 运行期间，可随时调用 `agy_status` 查看 agy 此刻在干什么（**按项目（工作目录）分节**，各含当前工具/步骤、最近轨迹），无需等待其结束。
 
 ## 回退 —— 禁止循环
 

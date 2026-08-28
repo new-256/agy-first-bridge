@@ -18,8 +18,8 @@
 在此基础上，本插件还实现了用户要求的几项关键能力：
 
 - **回退机制（弹窗确认）**：当 agy 疑似被限流或网络不通时，自动弹出确认框，让用户选择「使用 DSH 本地 API 配置（回退）」/「重试 agy 一次」/「不回退」。
-- **实时状态灯**：浏览器会话标题栏右侧的一枚彩色指示灯，随 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退 / 就绪），悬停可查看**当前正在执行的步骤**。
-- **实时观察（agy_status）**：`agy_status` 工具随时返回 agy 此刻在干什么 —— 当前步骤（工具名 + 参数或思考/打字中）、最近步骤轨迹、最近完成运行。运行中即可调用，无需等待结束。
+- **实时状态灯（按项目）**：浏览器会话标题栏右侧的彩色指示灯**为每个项目（工作目录）分别显示一盏**，随该项目 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退），悬停可查看该项目**当前正在执行的步骤**。
+- **实时观察（agy_status）**：`agy_status` 工具随时返回各项目 agy 此刻在干什么 —— 每个项目当前步骤（工具名 + 参数或思考/打字中）、最近步骤轨迹、最近完成运行。支持 `cwd` 参数只看某个项目。运行中即可调用，无需等待结束。
 
 ## 三种形态
 
@@ -88,7 +88,7 @@ Codex / 通用 JSON 配置、环境变量与自检见 [`mcp/README.md`](mcp/READ
 
 `agy_continue(prompt, conversationId? | latest?, ...)` —— 复用某个 agy 会话上下文继续对话，其余参数同上。
 
-`agy_status()` —— **实时观察**：返回 agy 此刻在干什么（`{ state, running, current, trail, lastStatus, lastConversationId, updatedAt }`）。`current` 为当前正在执行的步骤（工具名 + 参数，或 agent_response 思考/打字中），`trail` 为最近步骤轨迹。`agy_run`/`agy_continue` 运行期间即可调用，无需等待结束。
+`agy_status(cwd?)` —— **实时观察**：返回各项目 agy 此刻在干什么（`{ state, running, current, trail, lastStatus, lastConversationId, updatedAt, projects[] }`）。`projects[]` 按项目（工作目录）分节：`current` 为该项目当前正在执行的步骤（工具名 + 参数，或 agent_response 思考/打字中），`trail` 为最近步骤轨迹。可选 `cwd` 只查某个项目。`agy_run`/`agy_continue` 运行期间即可调用，无需等待结束。
 
 ## DSH 完全控制 agy
 
@@ -111,7 +111,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.3.0，Node ≥18）
+├─ package.json                 # 版本元数据（v1.4.0，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -130,7 +130,7 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.3.0）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.4.0）
    └─ en/                        # 英文文档
 ```
 
@@ -140,6 +140,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | **UI 状态灯按项目分别显示**：per-project 快照（按 cwd 分组）、每项目一盏灯、`agy_status` 支持 `cwd` 过滤、双项目并发验证 |
 | [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **实时观察**：所有形态改用 `stream-json` 逐事件解析，新增 `agy_status` 工具（当前步骤/轨迹/最近运行），状态灯 tooltip 显示当前步骤 |
 | [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH 随软件自启（默认 preset `cordis-agy`）、DSH 内 MCP 注册、外部软件 MCP 注册（Claude Code/Codex）、披露并优先策略、版本管理 |
 | [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | MCP 服务器（零依赖、任何 MCP 宿主可发现）、CI 扩展 |
