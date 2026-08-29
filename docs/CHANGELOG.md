@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.2] - 2026
+
+### Fixed
+- **动态形态 agy_run 触发 Host guard 拒绝**：Cordis 动态插件沙箱不暴露 `ctx.emit`（runner guard 拒绝任何访问并产生告警）。`dynamic/host.js` 此前在 `publish()` 中调用 `ctx.emit`，虽被 try/catch 包裹，仍会污染运行时状态。已改为 **no-op**：动态形态不推送事件（其浏览器灯通过 `harness.handle('agy_status')` RPC 读取快照），preset 形态（真 Node 模块）保留真实 `ctx.emit` 推送。
+- 目视实测（真实 agy 调用）确认状态灯全链路：标题栏灯 就绪（灰点）→ `⟳ DSH` 工作中（品牌色脉冲）→ `✓ DSH` 成功（绿点，last=SUCCESS）。
+
 ## [1.5.1] - 2026
 
 ### Fixed
