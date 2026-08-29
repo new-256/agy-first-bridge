@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.5] - 2026
+
+### Fixed
+- **脉冲圆点颜色无辨识度**：--dsw-alias-brand-primary 实际解析为近黑色（ar(--dsw-static-neutral-bluish-1000) = #0f1115），running 圆点看起来是灰点。改用静态蓝 --dsw-static-blue-500 (#3b82f6)，ok 改用 --dsw-static-green-500 (#22c55e)。
+- **灯文字显示项目名而非 AGY**（如 "⟳ DSH"）：统一显示 "AGY"（⟳ AGY / ✓ AGY / ✗ AGY / ↩ AGY），项目名与当前步骤移入 tooltip（project: DSH + 步骤轨迹）。
 ## [1.5.4] - 2026
 
 ### Added

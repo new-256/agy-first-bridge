@@ -3,11 +3,17 @@
 // 会话标题栏右侧的状态灯：每 1.2s 轮询 /agy-indicator/status（家级 host 半经
 // webServer 暴露的 HTTP 路由），按项目（工作目录 cwd）分别渲染一盏灯。
 //
-//   running  → 品牌色呼吸圆点, "⟳ 项目名 [×N]"
-//   ok       → 绿色圆点, "✓ 项目名"
-//   failed   → 红色圆点, "✗ 项目名"
-//   fallback → 琥珀色圆点, "↩ 项目名"
-//   idle     → 灰色圆点, "项目名"（仅当该项目仍在表中）
+//   running  → 蓝色呼吸圆点, "⟳ AGY [×N]"
+//   ok       → 绿色圆点, "✓ AGY"
+//   failed   → 红色圆点, "✗ AGY"
+//   fallback → 琥珀色圆点, "↩ AGY"
+//   idle     → 灰色圆点, "AGY"（仅当该项目仍在表中）
+//
+// 颜色说明（v1.5.5）：--dsw-alias-brand-primary 实际解析为近黑色
+// (var(--dsw-static-neutral-bluish-1000) = #0f1115)，与灰点辨识度低；
+// running 改用静态蓝 --dsw-static-blue-500 (#3b82f6)，ok 用
+// --dsw-static-green-500 (#22c55e)。文字统一显示 "AGY"（非项目名），
+// 项目名/当前步骤在 tooltip 里。
 //
 // 显示策略（v1.5.4）：
 // - presetActive=true（当前有 agy 优先会话在线）→ 常驻显示：无项目数据时
@@ -39,11 +45,12 @@ window.__ModuleLoader__.load({
       ".agy-ind{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);font-size:12px;line-height:1;color:var(--dsw-alias-label-secondary);white-space:nowrap;user-select:none}",
       ".agy-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--dsw-alias-label-secondary)}",
       ".agy-ind b{font-weight:600}",
-      ".agy-run .agy-dot{background:var(--dsw-alias-brand-primary);animation:agy-pulse 1s ease-in-out infinite}",
-      ".agy-ok .agy-dot{background:var(--dsw-alias-state-success-primary)}",
+      ".agy-run .agy-dot{background:var(--dsw-static-blue-500,#3b82f6);animation:agy-pulse 1s ease-in-out infinite}",
+      ".agy-ok .agy-dot{background:var(--dsw-static-green-500,#22c55e)}",
       ".agy-fail .agy-dot{background:var(--dsw-alias-state-error-primary)}",
       ".agy-fb .agy-dot{background:var(--dsw-alias-state-warn-primary)}",
-      ".agy-run{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-brand-primary)}",
+      ".agy-run{color:var(--dsw-static-blue-500,#3b82f6);border-color:var(--dsw-static-blue-500,#3b82f6)}",
+      ".agy-ok{color:var(--dsw-static-green-500,#22c55e);border-color:var(--dsw-static-green-500,#22c55e)}",
       ".agy-fb{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}",
       "@keyframes agy-pulse{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.72)}100%{opacity:1;transform:scale(1)}}"
     ].join("");
@@ -62,15 +69,18 @@ window.__ModuleLoader__.load({
       if (state === "fallback") return " agy-fb";
       return "";
     }
-    function pillText(state, name, running) {
-      if (state === "running") return "\u27F3 " + name + (running > 1 ? " \u00D7" + running : "");
-      if (state === "ok") return "\u2713 " + name;
-      if (state === "failed") return "\u2717 " + name;
-      if (state === "fallback") return "\u21A9 " + name;
-      return name;
+    function pillText(state, running) {
+      // 灯文字统一显示 "AGY"（而非项目名，避免 "⟳ DSH" 的歧义）；
+      // 项目名/步骤在 tooltip 里。
+      if (state === "running") return "\u27F3 AGY" + (running > 1 ? " \u00D7" + running : "");
+      if (state === "ok") return "\u2713 AGY";
+      if (state === "failed") return "\u2717 AGY";
+      if (state === "fallback") return "\u21A9 AGY";
+      return "AGY";
     }
     function pillTitle(p) {
       const parts = [];
+      parts.push(p.name ? ("project: " + p.name) : "project: " + p.cwd);
       if (p.current) { const c = p.current; parts.push("step " + c.stepIndex + " \u2192 " + c.tool + (c.args ? " " + JSON.stringify(c.args) : "")); }
       else if (p.running > 0) parts.push("(starting / thinking)");
       if (p.trail && p.trail.length) parts.push("recent: " + p.trail.slice(-3).map(function (e) { return e.state + " " + e.tool; }).join(" | "));
@@ -83,7 +93,7 @@ window.__ModuleLoader__.load({
       const p = props.p;
       return react.createElement("div", { className: "agy-ind" + pillClass(p.state), title: pillTitle(p) },
         react.createElement("span", { className: "agy-dot" }),
-        react.createElement("span", null, react.createElement("b", null, pillText(p.state, p.name, p.running))));
+        react.createElement("span", null, react.createElement("b", null, pillText(p.state, p.running))));
     }
 
     // 每 1.2s 拉一次 /agy-indicator/status，按项目渲染灯。

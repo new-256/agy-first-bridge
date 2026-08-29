@@ -138,7 +138,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.5.4，Node ≥18）
+├─ package.json                 # 版本元数据（v1.5.5，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -164,7 +164,7 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.4）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.5）
    └─ en/                        # 英文文档
 ```
 
@@ -174,6 +174,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.5.5](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.5) | **辨识度优化**：running 圆点改用静态蓝（--dsw-static-blue-500 #3b82f6，原 brand-primary 解析为近黑）、ok 用 static-green-500；灯文字统一显示 AGY（非项目名），项目名/步骤进 tooltip |
 | [v1.5.4](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.4) | **全软件统一为一盏灯 + 模式感知显示**：动态形态不再自渲染灯，改经家级 `agyCollector` 服务把状态推入同一张表；preset 模式常驻（`presetActive`），普通模式仅调用 agy 时临时显示（ok 保留 8s 后隐藏）；**修复后端启动崩溃**（裸名行经 main 二次加载 index.mjs 导致 `agyCollector` 重复注册——新增 `lib/client-entry.mjs` 占位 + main 改向 + provide 防御） |
 | [v1.5.3](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.3) | **修复动态灯读不到状态（永远显示占位灰点）**：`host.call` 返回 invoke 包装 `{ok, value}`，client 必须解包 `value` 才能拿到真实 snapshot；修复后动态灯显示真实状态（⟳ 工作中/✓ 成功），悬浮 tooltip 显示步骤轨迹 |
 | [v1.5.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.2) | **修复动态形态 agy_run 触发 Host guard 拒绝**：动态插件沙箱不暴露 `ctx.emit`，`dynamic/host.js` 的 `publish()` 改为 no-op（动态灯走 `agy_status` RPC，不推事件）；实测调用 agy_run 状态灯全链路正常（就绪→⟳ 工作中→✓ 成功） |
