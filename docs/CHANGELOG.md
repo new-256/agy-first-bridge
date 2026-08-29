@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.1] - 2026
+
+### Fixed
+- **切换会话（对话任务）时窗口空白**：家级 `agy-indicator` 的 client 半（`lib/client.js`）在组件卸载清理中曾依赖 Cordis `ctx.interval` 的 disposer；若其形态与预期不符，卸载会抛错，导致 React 渲染树崩溃、对话窗口空白。已改为**浏览器原生 `setInterval`/`clearInterval`**（组件内零 `ctx` 引用），卸载清理必然成功；`apply` 改用产品同款 `ctx.inject(['slots'], ...)` 等待服务就绪模式。
+- **家级灯与动态插件灯同 slot 撞 id**：家级 client 的 Slot id 由 `agy-indicator` 改为 **`agy-indicator-home`**，避免与动态插件形态（`dynamic/client.js`，id `agy-indicator`）同时运行时在同一 slot 冲突。
+
+### Changed
+- `home-plugin/agy-indicator/lib/client.js` 重写（对齐 dsh-model-status 成熟模式）；部署副本已同步，花名册热更新，刷新浏览器即生效。
+
 ## [1.5.0] - 2026
 
 ### Added

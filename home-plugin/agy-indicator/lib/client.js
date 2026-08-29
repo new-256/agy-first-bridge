@@ -1,4 +1,4 @@
-// agy-indicator — browser half.
+// agy-indicator — browser half (home-level plugin).
 //
 // 会话标题栏右侧的状态灯：每 1.2s 轮询 /agy-indicator/status（家级 host 半经
 // webServer 暴露的 HTTP 路由），按项目（工作目录 cwd）分别渲染一盏灯。
@@ -11,10 +11,12 @@
 //
 // 无任何项目数据时显示单个占位 pill "AGY 就绪"。
 //
-// 本文件为家级 client 模块：window.__ModuleLoader__.load({ id, factory }) 格式，
-// factory 内 require("react")，exports.apply/inject。样式用 document.head 注入
-// （家级 client 不是动态沙箱，可直接操作 DOM），颜色用 --dsw-alias-* 主题变量
-// 以跟随亮/暗主题。
+// 实现纪律（对齐产品 dsh-model-status 的成熟模式）：
+// - 轮询只用浏览器原生 setInterval/clearInterval，组件内不引用任何 Cordis ctx，
+//   切换会话（组件卸载）时 clearInterval 必成功，不会因 ctx.interval 的 disposer
+//   形态差异而抛错导致对话窗口空白。
+// - apply 用 ctx.inject(['slots'], (scope) => {...}) 等待 slots 服务就绪后再注册。
+// - id 用 'agy-indicator-home'，避免与动态插件形态的 'agy-indicator' 在同 slot 撞 id。
 
 window.__ModuleLoader__.load({
   id: "agy-indicator",
@@ -45,24 +47,6 @@ window.__ModuleLoader__.load({
       document.head.appendChild(tag);
     }
 
-    const NS = "agy-indicator";
-    const zh = {
-      ready: "AGY 就绪",
-      running: "AGY 工作中",
-      ok: "AGY",
-      failed: "AGY 失败",
-      fallback: "本地回退",
-      aria: "agy 状态：{status}"
-    };
-    const en = {
-      ready: "AGY ready",
-      running: "AGY working",
-      ok: "AGY",
-      failed: "AGY failed",
-      fallback: "fallback",
-      aria: "agy status: {status}"
-    };
-
     function pillClass(state) {
       if (state === "running") return " agy-run";
       if (state === "ok") return " agy-ok";
@@ -86,29 +70,35 @@ window.__ModuleLoader__.load({
       return "agy [" + p.state + (p.running > 0 ? " \u00D7" + p.running : "") + "] " + p.cwd + (parts.length ? "\n" + parts.join("\n") : "");
     }
 
-    function Pill(p) {
+    // 单项目 pill。
+    function Pill(props) {
+      const p = props.p;
       return react.createElement("div", { className: "agy-ind" + pillClass(p.state), title: pillTitle(p) },
         react.createElement("span", { className: "agy-dot" }),
         react.createElement("span", null, react.createElement("b", null, pillText(p.state, p.name, p.running))));
     }
 
+    // 每 1.2s 拉一次 /agy-indicator/status，按项目渲染灯。
+    // 组件不引用 ctx：轮询用原生 setInterval，卸载用 clearInterval（必成功）。
     function Indicator() {
       const st = react.useState(null);
       const s = st[0];
       const setS = st[1];
       react.useEffect(function () {
         let alive = true;
+        let timerId = null;
         const tick = function () {
           fetch("/agy-indicator/status", { cache: "no-store" })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (v) { if (alive) setS(v); })
-            .catch(function () {});
+            .catch(function () { /* 轮询失败静默，灯保持上次状态 */ });
         };
         tick();
-        const dispose = (typeof ctx !== "undefined" && ctx && typeof ctx.interval === "function")
-          ? ctx.interval(tick, 1200)
-          : setInterval(tick, 1200);
-        return function () { alive = false; if (dispose) dispose(); };
+        timerId = setInterval(tick, 1200);
+        return function () {
+          alive = false;
+          if (timerId !== null) clearInterval(timerId);
+        };
       }, []);
       if (s && Array.isArray(s.projects) && s.projects.length) {
         return react.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: "6px" } },
@@ -134,18 +124,21 @@ window.__ModuleLoader__.load({
         react.createElement("span", { className: "agy-dot" }), react.createElement("span", null, text));
     }
 
-    const inject = ["slots", "timer"];
-
     function apply(ctx) {
-      const slots = ctx.get("slots");
-      if (slots === undefined) return;
-      slots.inject("conversation.session.header.utilities", function () {
-        return slots.register({ name: "conversation.session.header.utilities", id: "agy-indicator", order: 50 }, function () { return react.createElement(Indicator); });
+      // 等 slots 服务就绪后再注册（产品插件同款模式；ctx.inject 子纤维在
+      // 服务可用时执行，scope 的 effect 随插件生命周期回收）。
+      if (typeof ctx.inject !== "function") return;
+      ctx.inject(["slots"], function (scope) {
+        const slots = scope.get("slots");
+        if (slots === undefined) return;
+        scope.slots.inject("conversation.session.header.utilities", function () {
+          return slots.register({ name: "conversation.session.header.utilities", id: "agy-indicator-home", order: 50 }, function () { return react.createElement(Indicator); });
+        });
       });
     }
 
     exports.apply = apply;
-    exports.inject = inject;
+    exports.inject = ["slots"];
     return module.exports;
   }
 });

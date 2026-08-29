@@ -173,6 +173,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.5.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.1) | **修复切换会话空白**：家级灯 client 半改用原生 setInterval/clearInterval（卸载不再可能抛错），Slot id 改为 `agy-indicator-home` 避免与动态插件撞 id |
 | [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | **状态灯随软件启动**：家级插件 `agy-indicator`（cordis.patch.yml 注册，所有会话自动显示、无需审批）；preset 每次状态变化推送事件到家级收集器 |
 | [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | **UI 状态灯按项目分别显示**：per-project 快照（按 cwd 分组）、每项目一盏灯、`agy_status` 支持 `cwd` 过滤、双项目并发验证 |
 | [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **实时观察**：所有形态改用 `stream-json` 逐事件解析，新增 `agy_status` 工具（当前步骤/轨迹/最近运行），状态灯 tooltip 显示当前步骤 |
