@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.6] - 2026
+
+### Added
+- **点击灯弹窗实时查看 agy 活动**：点击标题栏状态灯打开详情面板，逐项目显示：
+  - 当前步骤（高亮）：当前: step N → 工具名 + 参数 JSON；
+  - 最近步骤：最近 6 条轨迹（[ACTIVE/DONE] step N 工具 参数）；
+  - 项目 cwd 与上次状态（last=SUCCESS + 会话号）。
+  - 数据跟随 1.2s 轮询**自动刷新**，无需关闭重开；关闭方式：× 按钮 / 点击遮罩 / Esc。
+  - 纯浏览器实现（原生 setInterval/clearInterval + React），不引入 Cordis ctx，保持切换会话不空白。
+- 目视实测：运行中点击灯 → 面板实时显示 step → tool + 参数变化；完成后显示 ✓ + 轨迹。
 ## [1.5.5] - 2026
 
 ### Fixed

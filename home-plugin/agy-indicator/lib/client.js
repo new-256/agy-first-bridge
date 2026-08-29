@@ -25,6 +25,10 @@
 // 暴露的 agyCollector 服务把状态推入同一张表，由本灯统一显示。因此全软件
 // 只会有这一个 agy 状态灯。
 //
+// 点击弹窗（v1.5.6）：点击任意状态灯打开详情面板，实时显示每个项目的
+// 当前步骤（step → tool + 参数）、最近轨迹与上次状态；数据跟随 1.2s 轮询
+// 自动刷新，无需手动操作。关闭方式：× 按钮 / 点击遮罩 / Esc。
+//
 // 实现纪律（对齐产品 dsh-model-status 的成熟模式）：
 // - 轮询只用浏览器原生 setInterval/clearInterval，组件内不引用任何 Cordis ctx，
 //   切换会话（组件卸载）时 clearInterval 必成功，不会因 ctx.interval 的 disposer
@@ -43,6 +47,7 @@ window.__ModuleLoader__.load({
 
     const CSS = [
       ".agy-ind{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);font-size:12px;line-height:1;color:var(--dsw-alias-label-secondary);white-space:nowrap;user-select:none}",
+      ".agy-ind:hover{border-color:var(--dsw-alias-border-l2);cursor:pointer}",
       ".agy-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--dsw-alias-label-secondary)}",
       ".agy-ind b{font-weight:600}",
       ".agy-run .agy-dot{background:var(--dsw-static-blue-500,#3b82f6);animation:agy-pulse 1s ease-in-out infinite}",
@@ -52,7 +57,22 @@ window.__ModuleLoader__.load({
       ".agy-run{color:var(--dsw-static-blue-500,#3b82f6);border-color:var(--dsw-static-blue-500,#3b82f6)}",
       ".agy-ok{color:var(--dsw-static-green-500,#22c55e);border-color:var(--dsw-static-green-500,#22c55e)}",
       ".agy-fb{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}",
-      "@keyframes agy-pulse{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.72)}100%{opacity:1;transform:scale(1)}}"
+      "@keyframes agy-pulse{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.72)}100%{opacity:1;transform:scale(1)}}",
+      // ── 点击灯弹出的 agy 活动详情面板 ──────────────────────────────
+      ".agy-pop-overlay{position:fixed;inset:0;background:rgba(0,0,0,.32);z-index:10000;display:flex;align-items:center;justify-content:center}",
+      ".agy-pop-panel{width:520px;max-width:92vw;max-height:76vh;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35);font-size:12px;line-height:1.5;color:var(--dsw-alias-label-primary);overflow:hidden}",
+      ".agy-pop-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l1);font-weight:600}",
+      ".agy-pop-close{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);border-radius:6px;width:22px;height:22px;line-height:1;font-size:13px;cursor:pointer}",
+      ".agy-pop-close:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}",
+      ".agy-pop-body{overflow:auto;padding:12px 14px}",
+      ".agy-pop-empty{color:var(--dsw-alias-label-secondary);text-align:center;padding:18px 0}",
+      ".agy-pop-proj{margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed var(--dsw-alias-border-l1)}",
+      ".agy-pop-proj:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}",
+      ".agy-pop-proj-head{font-weight:600;margin-bottom:4px}",
+      ".agy-pop-mono{font-family:Consolas,Menlo,monospace;font-size:11px;color:var(--dsw-alias-label-secondary)}",
+      ".agy-pop-line{padding:1px 0}",
+      ".agy-pop-cur{background:rgba(59,130,246,.12);border-radius:4px;padding:3px 6px;margin:4px 0}",
+      ".agy-pop-cur .agy-pop-mono{color:var(--dsw-alias-label-primary)}"
     ].join("");
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"agy-indicator\"]") === null) {
       const tag = document.createElement("style");
@@ -88,12 +108,62 @@ window.__ModuleLoader__.load({
       return "agy [" + p.state + (p.running > 0 ? " \u00D7" + p.running : "") + "] " + p.cwd + (parts.length ? "\n" + parts.join("\n") : "");
     }
 
-    // 单项目 pill。
+    // 单项目 pill（点击打开详情弹窗）。
     function Pill(props) {
       const p = props.p;
-      return react.createElement("div", { className: "agy-ind" + pillClass(p.state), title: pillTitle(p) },
+      return react.createElement("div", { className: "agy-ind" + pillClass(p.state), title: pillTitle(p), onClick: props.onClick },
         react.createElement("span", { className: "agy-dot" }),
         react.createElement("span", null, react.createElement("b", null, pillText(p.state, p.running))));
+    }
+
+    function argText(a) {
+      if (a === undefined || a === null) return "";
+      try { const j = JSON.stringify(a); return j.length > 140 ? j.slice(0, 137) + "…" : j; } catch (e) { return String(a); }
+    }
+
+    // 详情弹窗：实时显示各项目当前步骤/最近轨迹（数据随 Indicator 轮询刷新）。
+    function Popup(props) {
+      const s = props.s;
+      const onClose = props.onClose;
+      const rows = [];
+      if (s && Array.isArray(s.projects) && s.projects.length) {
+        s.projects.forEach(function (p, i) {
+          const head = (p.state === "running" ? "\u27F3 " : p.state === "ok" ? "\u2713 " : p.state === "failed" ? "\u2717 " : p.state === "fallback" ? "\u21A9 " : "") + (p.name || p.cwd);
+          const badge = "[" + p.state + (p.running > 0 ? " \u00D7" + p.running : "") + "]";
+          rows.push(react.createElement("div", { key: "p" + i, className: "agy-pop-proj" },
+            react.createElement("div", { className: "agy-pop-proj-head" }, head, " ", react.createElement("span", { className: "agy-pop-mono" }, badge)),
+            react.createElement("div", { className: "agy-pop-line agy-pop-mono" }, p.cwd),
+            (function () {
+              if (p.current) {
+                const c = p.current;
+                return react.createElement("div", { className: "agy-pop-cur" },
+                  react.createElement("div", null, "当前: step " + c.stepIndex + " \u2192 " + c.tool),
+                  react.createElement("div", { className: "agy-pop-mono" }, c.args ? argText(c.args) : ""));
+              }
+              if (p.running > 0) {
+                return react.createElement("div", { className: "agy-pop-cur" }, "(starting / thinking…)");
+              }
+              return null;
+            })(),
+            (p.trail && p.trail.length) ? react.createElement("div", null,
+              react.createElement("div", { className: "agy-pop-line", style: { marginTop: "6px", color: "var(--dsw-alias-label-secondary)" } }, "最近步骤:"),
+              p.trail.slice(-6).map(function (e, j) {
+                return react.createElement("div", { key: "t" + j, className: "agy-pop-line agy-pop-mono" },
+                  "[" + e.state + "] step " + e.stepIndex + " " + e.tool + (e.args ? " " + argText(e.args) : ""));
+              })) : null,
+            (p.lastStatus) ? react.createElement("div", { className: "agy-pop-line agy-pop-mono", style: { marginTop: "6px" } },
+              "last=" + p.lastStatus + (p.lastConversationId ? " " + p.lastConversationId.slice(0, 8) : "")) : null));
+        });
+      } else {
+        rows.push(react.createElement("div", { key: "empty", className: "agy-pop-empty" }, "暂无 agy 活动"));
+      }
+      const headText = "agy 状态" + (s && s.state ? " · " + s.state + (s.running > 0 ? " (" + s.running + " running)" : "") : "") + (s && s.presetActive ? " · agy 优先" : " · 普通模式");
+      return react.createElement("div", { className: "agy-pop-overlay", onClick: onClose },
+        react.createElement("div", { className: "agy-pop-panel", onClick: function (e) { e.stopPropagation(); } },
+          react.createElement("div", { className: "agy-pop-head" },
+            react.createElement("span", null, headText),
+            react.createElement("button", { className: "agy-pop-close", title: "关闭 (Esc)", onClick: onClose }, "\u2715")),
+          react.createElement("div", { className: "agy-pop-body" }, rows)));
     }
 
     // 每 1.2s 拉一次 /agy-indicator/status，按项目渲染灯。
@@ -102,6 +172,9 @@ window.__ModuleLoader__.load({
       const st = react.useState(null);
       const s = st[0];
       const setS = st[1];
+      const ot = react.useState(false);
+      const open = ot[0];
+      const setOpen = ot[1];
       react.useEffect(function () {
         let alive = true;
         let timerId = null;
@@ -118,33 +191,47 @@ window.__ModuleLoader__.load({
           if (timerId !== null) clearInterval(timerId);
         };
       }, []);
+      // Esc 关闭弹窗。
+      react.useEffect(function () {
+        if (!open) return;
+        const h = function (e) { if (e.key === "Escape") setOpen(false); };
+        window.addEventListener("keydown", h);
+        return function () { window.removeEventListener("keydown", h); };
+      }, [open]);
       const hasProjects = s && Array.isArray(s.projects) && s.projects.length;
       // 非 agy 优先模式且无项目数据：不渲染（普通模式调用 agy 时才显示）。
       if (!hasProjects && !(s && s.presetActive)) {
         return null;
       }
+      const openDetail = function () { setOpen(true); };
+      let light;
       if (hasProjects) {
-        return react.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: "6px" } },
-          s.projects.map(function (p, i) { return react.createElement(Pill, { key: p.cwd || ("p" + i), p: p }); }));
+        light = react.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: "6px" } },
+          s.projects.map(function (p, i) { return react.createElement(Pill, { key: p.cwd || ("p" + i), p: p, onClick: openDetail }); }));
+      } else {
+        const state = s ? s.state : "idle";
+        let text = "AGY 就绪";
+        if (state === "running") text = "AGY 工作中" + (s && s.running > 1 ? " \u00D7" + s.running : "");
+        else if (state === "ok") text = "AGY";
+        else if (state === "failed") text = "AGY 失败";
+        else if (state === "fallback") text = "本地回退";
+        let detail = "";
+        if (s) {
+          const parts = [];
+          if (s.current) { const c = s.current; parts.push("step " + c.stepIndex + " \u2192 " + c.tool + (c.args ? " " + JSON.stringify(c.args) : "")); }
+          else if (s.state === "running") parts.push("(starting / thinking)");
+          if (s.trail && s.trail.length) parts.push("recent: " + s.trail.slice(-3).map(function (e) { return e.state + " " + e.tool; }).join(" | "));
+          if (s.lastStatus) parts.push("last=" + s.lastStatus + (s.lastConversationId ? " " + s.lastConversationId.slice(0, 8) : ""));
+          detail = parts.join(" \u2014 ");
+        }
+        const title = s ? ("agy state=" + s.state + " running=" + s.running + (detail ? "\n" + detail : "")) : "agy status";
+        light = react.createElement("div", { className: "agy-ind" + pillClass(state), title: title, onClick: openDetail },
+          react.createElement("span", { className: "agy-dot" }), react.createElement("span", null, text));
       }
-      const state = s ? s.state : "idle";
-      let text = "AGY 就绪";
-      if (state === "running") text = "AGY 工作中" + (s && s.running > 1 ? " \u00D7" + s.running : "");
-      else if (state === "ok") text = "AGY";
-      else if (state === "failed") text = "AGY 失败";
-      else if (state === "fallback") text = "本地回退";
-      let detail = "";
-      if (s) {
-        const parts = [];
-        if (s.current) { const c = s.current; parts.push("step " + c.stepIndex + " \u2192 " + c.tool + (c.args ? " " + JSON.stringify(c.args) : "")); }
-        else if (s.state === "running") parts.push("(starting / thinking)");
-        if (s.trail && s.trail.length) parts.push("recent: " + s.trail.slice(-3).map(function (e) { return e.state + " " + e.tool; }).join(" | "));
-        if (s.lastStatus) parts.push("last=" + s.lastStatus + (s.lastConversationId ? " " + s.lastConversationId.slice(0, 8) : ""));
-        detail = parts.join(" \u2014 ");
-      }
-      const title = s ? ("agy state=" + s.state + " running=" + s.running + (detail ? "\n" + detail : "")) : "agy status";
-      return react.createElement("div", { className: "agy-ind" + pillClass(state), title: title },
-        react.createElement("span", { className: "agy-dot" }), react.createElement("span", null, text));
+      if (!open) return light;
+      return react.createElement(react.Fragment, null,
+        light,
+        react.createElement(Popup, { s: s, onClose: function () { setOpen(false); } }));
     }
 
     function apply(ctx) {
