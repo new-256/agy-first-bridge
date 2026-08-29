@@ -18,20 +18,23 @@
 On top of that it implements the key capabilities that motivated the project:
 
 - **Fallback mechanism (confirmation dialog):** when agy looks rate-limited or the network is unreachable, a dialog pops up offering *"use the DSH local API config (fall back)" / "retry agy once" / "do not fall back"*.
-- **Live status lights (per project):** coloured indicators on the right of the browser session header — **one per project (working directory)** — reflecting each project's agy activity in real time (working / ok / failed / fallback); hovering shows the step that project's agy is currently executing.
+- **Live status lights (per project, start-up persistent):** coloured indicators on the right of the browser session header — **one per project (working directory)** — reflecting each project's agy activity in real time (working / ok / failed / fallback); hovering shows the step that project's agy is currently executing. The light is a **home-level plugin** ([`home-plugin/agy-indicator/`](home-plugin/agy-indicator/), registered via `cordis.patch.yml`): it loads automatically with DSH, appears in **every session**, and needs **no approval**.
 - **Live observation (`agy_status`):** the `agy_status` tool returns a snapshot of what agy is doing RIGHT NOW, sectioned per project — each project's current step (tool name + arguments, or thinking/typing), recent step trail, last completed run. Optional `cwd` filters to one project. Callable mid-flight, no waiting.
 
-## Three forms
+## Four forms
 
-The same logic ships in three forms; pick per need:
+The same logic ships in four forms; pick per need:
 
 | Form | Location | Capabilities | Survives restart | Status light |
 | --- | --- | --- | --- | --- |
 | **Persistent agent preset** (recommended) | [`preset/agy-first/`](preset/agy-first/) | tools + policy + fallback dialog + `agy_status` | ✅ yes (persisted preset) | ❌ no (host-plane composition has no browser UI) |
+| **Home-level status-light plugin** (start-up persistent) | [`home-plugin/agy-indicator/`](home-plugin/agy-indicator/) | status light (every session, no approval) | ✅ yes (cordis.patch.yml) | ✅ yes |
 | **Dynamic Cordis plugin** (in-session) | [`dynamic/`](dynamic/) | tools + policy + fallback dialog + **status light** + `agy_status` | ❌ no (process-local) | ✅ yes (one-time approval) |
 | **MCP server** (any MCP host) | [`mcp/`](mcp/) | `agy_run` / `agy_continue` / `agy_status` auto-discovered via `tools/list` by Claude Code, Codex, Cherry Studio, … | ✅ yes (registered in client config) | ❌ no |
 
-> **Why is the status light only in the dynamic form?** An agent preset is a **host-plane** composition (`agent.cordis.yml` mounts host plugins), and its `.mjs` runs only on the Node side, so it inherently has no browser UI. The live status light is a **client-plane** (browser Slot) component that must be loaded through the client half of a dynamic Cordis plugin (approved once in the GUI on first run). The fallback dialog is a host-side capability and is present in **both** forms.
+> **Why does the status light need a home-level plugin?** An agent preset is a **host-plane** composition (`agent.cordis.yml` mounts host plugins), and its `.mjs` runs only on the Node side, so it inherently has no browser UI. The live status light is a **client-plane** (browser Slot) component. A **home-level plugin** (registered via `cordis.patch.yml`, e.g. [`home-plugin/agy-indicator/`](home-plugin/agy-indicator/)) provides both a host half (collecting agy status pushed by each session + an HTTP route) and a client half (the browser poll-and-render light), so it loads with DSH, appears in every session and needs no approval. The dynamic form's light (one-time GUI approval) and the home-level light can coexist: the dynamic form uses its own `host.call` RPC, the home-level one uses event push.
+>
+> The fallback dialog is a host-side capability and is present in **both** the preset and dynamic forms. The MCP form has no UI; on rate-limit it appends a "don't loop-retry" note to the result text and lets the calling agent decide.
 
 See [docs/en/ARCHITECTURE.md](docs/en/ARCHITECTURE.md).
 
@@ -57,7 +60,31 @@ Then start a new DSH session and select the preset named **`Agy-First 执行代�
 
 Full steps and validation are in [docs/en/INSTALL.md](docs/en/INSTALL.md).
 
-### Option B: run as a dynamic Cordis plugin (with the status light)
+### Option B: install the home-level status-light plugin (start-up persistent, every session)
+
+Copy [`home-plugin/agy-indicator/`](home-plugin/agy-indicator/) into the DSH home plugin directory and register it in `cordis.patch.yml`; the light then loads automatically with DSH, appears in every session, and needs no approval:
+
+```powershell
+# 1) copy the plugin source
+$dshHome = "$env:APPDATA\DSH Desktop\dsh-home"
+Copy-Item -Recurse .\home-plugin\agy-indicator "$dshHome\plugins\agy-indicator"
+
+# 2) create junctions (needed by both host resolution and the browser roster)
+New-Item -ItemType Junction -Path "$dshHome\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+
+# 3) append two rows to cordis.patch.yml (HMR hot-reloads, no restart needed):
+#    - insert:
+#        - id: agy-indicator
+#          name: file:///.../plugins/agy-indicator/lib/index.mjs?v=1
+#    - insert:
+#        - id: agy-indicator-client
+#          name: agy-indicator
+```
+
+Pair it with the **preset form** (Option A): the preset's `agy-first-bridge.mjs` emits `ctx.emit('agy/status')` on every state change, which the home-level collector merges and the light renders. After editing `lib/index.mjs`, bump `?v=N` to hot-reload; after editing `lib/client.js`, refresh the browser.
+
+### Option C: run as a dynamic Cordis plugin (with the status light)
 
 In a DSH session that has Cordis capabilities loaded, define and activate the plugin with `cordis_define` + `cordis_run`, using [`dynamic/host.js`](dynamic/host.js) for the host half and [`dynamic/client.js`](dynamic/client.js) for the client half. The first time the client half runs, the DSH GUI asks for a one-time approval; once granted, the status light appears in the session header.
 
@@ -99,7 +126,7 @@ agy-first-bridge/
 ├─ README.md / README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                    # version metadata (v1.4.0, Node >=18)
+├─ package.json                    # version metadata (v1.5.0, Node >=18)
 ├─ MCP-POLICY.md                   # disclose-and-prefer policy for external agents (also ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md)
 ├─ .github/workflows/ci.yml       # node --check + YAML validation
 ├─ assets/indicator-states.svg    # status-light states diagram
@@ -108,6 +135,12 @@ agy-first-bridge/
 │     ├─ preset.yml
 │     ├─ agent.cordis.yml          #   standard + one agy plugin row
 │     └─ agy-first-bridge.mjs      #   self-contained, dependency-free host module
+├─ home-plugin/
+│  └─ agy-indicator/               # home-level status-light plugin (start-up persistent)
+│     ├─ package.json              #   dsh.client declaration (browser roster)
+│     └─ lib/
+│        ├─ index.mjs              #   host half: collects agy/status events + HTTP route
+│        └─ client.js              #   browser half: poll + render per-project light
 ├─ dynamic/                        # dynamic Cordis plugin form (with status light)
 │  ├─ host.js                      #   code.host body
 │  └─ client.js                    #   code.client body (browser status light)
@@ -125,6 +158,7 @@ Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/C
 
 | Version | Highlights |
 | --- | --- |
+| [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | **Status light starts with the software**: home-level plugin `agy-indicator` (registered via `cordis.patch.yml`, appears in every session, no approval); the preset emits status events to the home-level collector on every state change |
 | [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | **Per-project status lights**: snapshots grouped by project (cwd), one light per project in the UI, `agy_status` supports `cwd` filtering, verified with two concurrent projects |
 | [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **Live observation**: all forms run agy with `stream-json` and parse `step_update` events; new `agy_status` tool (current step / trail / last run); status-light tooltip shows the current step |
 | [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH auto-start (default preset `cordis-agy`), in-DSH MCP registration, external MCP registration (Claude Code / Codex), disclose-and-prefer policy, version management |

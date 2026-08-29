@@ -1,6 +1,12 @@
 # Installation
 
-This plugin ships in two forms. **Most users just want the persistent agent preset**; use the dynamic Cordis plugin when you also want the browser status light.
+This plugin ships in three forms, combinable:
+
+1. **Persistent agent preset** — tools + policy + fallback dialog + `agy_status` (most users' first choice);
+2. **Home-level status-light plugin** (v1.5.0+) — the status light starts with the software, appears in every session, needs no approval (pair with Option A, see Option B);
+3. **Dynamic Cordis plugin** — process-local temporary form that also brings its own browser status light (one-time approval, see Option C).
+
+**Recommended combo: Option A + Option B** — install once, tools plus a persistent status light, ready when DSH starts.
 
 [简体中文](../INSTALL.md)
 
@@ -88,9 +94,46 @@ Start a new session and select the preset **`Agy-First 执行代理`** (id: `agy
 
 ---
 
-## Option B: dynamic Cordis plugin (with the browser status light)
+## Option B: home-level status-light plugin (start-up persistent, every session, v1.5.0+)
 
-The dynamic form is a process-local plugin that **disappears on restart**, but it adds the live status light in the session header.
+Install [`home-plugin/agy-indicator/`](../../home-plugin/agy-indicator/) as a DSH home-level plugin; the light then loads automatically with DSH, appears in every session and needs no approval. **Pair with Option A**: the preset emits `ctx.emit('agy/status')` on every state change, the home-level collector merges it and exposes it via an HTTP route, and the browser light polls and renders it.
+
+```powershell
+$dshHome = "$env:APPDATA\DSH Desktop\dsh-home"   # or your DSH home directory
+
+# 1) copy the plugin source
+Copy-Item -Recurse .\home-plugin\agy-indicator "$dshHome\plugins\agy-indicator"
+
+# 2) create junctions (needed by both host resolution and the browser roster)
+New-Item -ItemType Junction -Path "$dshHome\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+
+# 3) append two rows to cordis.patch.yml (Cordis HMR hot-reloads, no restart needed):
+#    - insert:
+#        - id: agy-indicator
+#          name: file:///.../plugins/agy-indicator/lib/index.mjs?v=1
+#    - insert:
+#        - id: agy-indicator-client
+#          name: agy-indicator
+```
+
+Verification:
+
+```powershell
+# host route (the light's data source)
+Invoke-WebRequest -Uri "http://127.0.0.1:<DSH port>/agy-indicator/status"   # → {"state":"idle","running":0,"projects":[]}
+
+# client module is in the browser roster
+Invoke-WebRequest -Uri "http://127.0.0.1:<DSH port>/plugins/agy-indicator/client.js"  # → 200
+```
+
+After editing `lib/index.mjs`, bump `?v=N` to hot-reload; after editing `lib/client.js`, refresh the browser.
+
+---
+
+## Option C: dynamic Cordis plugin (process-local temporary form)
+
+The dynamic form is a process-local plugin that **disappears on restart**, but it brings its own browser status light (Client→Host RPC, no home-level plugin needed).
 
 1. In a DSH session with Cordis capabilities loaded, define the plugin with `cordis_define`:
    - `code.host` = the full contents of [`dynamic/host.js`](../../dynamic/host.js);
@@ -99,11 +142,12 @@ The dynamic form is a process-local plugin that **disappears on restart**, but i
 3. The first time the **client half** runs, the DSH GUI raises a one-time approval (single check authorizes the current package; double check authorizes future versions). Once granted, the light appears at the right of the session header.
 4. Use `cordis_stop` to disable temporarily; `cordis_undefine` to remove permanently.
 
-> If approval prompts are disabled in the session, the client half is auto-rejected — use Option A instead (the fallback dialog still works, just without the light).
+> If approval prompts are disabled in the session, the client half is auto-rejected — use the **Option A + Option B** combo instead (fallback dialog and home-level light still work).
 
 ---
 
 ## Uninstall
 
 - **Preset**: delete the `.agent-presets/agy-first/` directory (it disappears from the next roster read).
+- **Home-level status-light plugin**: remove the two rows from `cordis.patch.yml` (HMR unloads it), delete `dsh-home/plugins/agy-indicator/` and the two junctions (`node_modules\agy-indicator`, `profiles\node_modules\agy-indicator`).
 - **Dynamic plugin**: `cordis_undefine <pluginId>`.

@@ -133,7 +133,7 @@ return {
         projects: list.map((p) => ({ cwd: p.cwd, name: p.name, state: p.state, running: p.running, current: p.current, trail: p.trail.slice(-MAX_TRAIL), lastStatus: p.lastStatus, lastAt: p.lastAt, lastConversationId: p.lastConversationId, fallbackActive: p.fallbackActive, updatedAt: p.updatedAt }))
       }
     }
-    function begin(cwd) { const p = ensureProject(cwd); p.running += 1; p.state = 'running'; p.updatedAt = Date.now() }
+    function begin(cwd) { const p = ensureProject(cwd); p.running += 1; p.state = 'running'; p.updatedAt = Date.now(); publish() }
     function end(res, cwd) {
       const p = ensureProject(cwd)
       p.running = Math.max(0, p.running - 1)
@@ -145,6 +145,7 @@ return {
       else { p.state = res && res.ok ? 'ok' : 'failed'; p.lastOk = !!(res && res.ok); p.lastFailed = !(res && res.ok) }
       p.current = null
       p.updatedAt = Date.now()
+      publish()
     }
     function foldStepUpdate(ev, cwd) {
       const s = ev && ev.step_update
@@ -162,6 +163,14 @@ return {
       } else if (s.step_type === 'agent_response' && s.state === 'ACTIVE' && s.text_delta) {
         p.current = { tool: 'agent_response', args: { text_delta: String(s.text_delta).slice(0, MAX_ARG_LEN) }, stepIndex: s.step_index, since: nowIso() }
       }
+      publish()
+    }
+
+    // Publish the current snapshot to the home-level agy-indicator collector
+    // (cordis.patch.yml) so the persistent browser light can show it. The event
+    // is an app-level broadcast; the collector merges projects by cwd.
+    function publish() {
+      try { ctx.emit('agy/status', { snapshot: snapshot() }) } catch (e) { /* ignore */ }
     }
     harness.handle('agy_status', function () { return snapshot() })
 

@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.0] - 2026
+
+### Added
+- **状态灯随软件启动（home-level `agy-indicator` 插件）**：状态灯不再依赖动态插件（重启即失）或 preset（无 UI），而是作为**家级插件**通过 `cordis.patch.yml` 注册（`dsh-home/plugins/agy-indicator/`，junction 到 `node_modules/agy-indicator` 与 `profiles/node_modules/agy-indicator`），随 DSH 启动自动加载、**所有会话自动显示**、无需审批。
+  - host 半（`lib/index.mjs`）：`ctx.on('agy/status')` 收集各会话 agy-first-bridge 推送的快照，维护按 cwd 索引的全局项目表；经 `webServer` 注册 `GET /agy-indicator/status` 暴露 JSON；10 分钟未更新的 idle 项目自动过滤。
+  - client 半（`lib/client.js`）：浏览器花名册模块（`window.__ModuleLoader__.load`），挂载 `conversation.session.header.utilities`，每 1.2s 轮询 HTTP 路由，按项目分别渲染状态灯（同 v1.4.0 样式：`⟳`/`✓`/`✗`/`↩` + 项目名）。
+- **preset 形态推送状态**：`agy-first-bridge.mjs` 的 `begin`/`end`/`foldStepUpdate` 每次更新后 `ctx.emit('agy/status', { snapshot })`，供家级收集器合并。动态插件形态（沙箱无 `ctx.emit`）维持自身 client 半灯（`host.call('agy_status')`），无需家级推送。
+
+### Notes
+- `cordis.patch.yml` 通过 Cordis HMR 热重载：改 `lib/index.mjs` 后 bump `?v=N` 即生效，改 `lib/client.js` 后刷新浏览器即生效（无需重启 DSH）。
+
 ## [1.4.0] - 2026
 
 ### Added

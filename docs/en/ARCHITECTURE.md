@@ -68,7 +68,31 @@ Host and Client communicate only through package-private JSON RPC: the host expo
 | Tool registration | `harness.registerTool(ctx, harness.defineTool({...}))` | `ctx.tools.register(<plain ToolDefinition object>)` |
 | Host→Client RPC | `harness.handle('agy_status', ...)` | ⚠️ no client half, so not registered (and no consumer) |
 
-> This is exactly why **the status light exists only in the dynamic form**: a preset is a host-plane composition whose `.mjs` runs only on the Node side and has no browser UI; the live light is a client-plane Slot component that must be loaded by the client half of a dynamic Cordis plugin.
+> This is why, before v1.5.0, **the status light existed only in the dynamic form**: a preset is a host-plane composition whose `.mjs` runs only on the Node side and has no browser UI; the live light is a client-plane Slot component that must be loaded by the client half of a dynamic Cordis plugin. **v1.5.0 adds a home-level plugin form that solves persistence** (see below).
+
+## Home-level status-light plugin (`home-plugin/agy-indicator/`, v1.5.0+)
+
+The status light no longer depends on an in-session dynamic plugin (lost on restart); it is registered through `cordis.patch.yml` as a **home-level plugin** that starts with the software, appears in every session, and needs no approval:
+
+```
+In-session agy-first-bridge (preset, real Node module)          DSH Host (root realm)
+  begin/end/foldStepUpdate ── ctx.emit('agy/status', {snapshot})
+                                          │  (events are app-level broadcasts; isolate realms isolate services only)
+                                          ▼
+                        agy-indicator host half (lib/index.mjs)
+                          ctx.on('agy/status') → global projects[cwd] table
+                          webServer.register({kind:'exact', path:'/agy-indicator/status'})
+                                          │  GET → JSON {state, running, projects[]}
+                                          ▼
+                        DSH Client (browser)
+                          agy-indicator client half (lib/client.js, roster module)
+                          fetch('/agy-indicator/status') every 1.2s → render one light per project
+```
+
+- host half `lib/index.mjs`: `ctx.on('agy/status')` collects snapshots and merges them by cwd into a global project table (idle projects untouched for 10 minutes are filtered out; max 24); exposes `GET /agy-indicator/status` via `webServer`.
+- client half `lib/client.js`: `window.__ModuleLoader__.load({id, factory})` format (same as `dsh-model-status`), mounted in `conversation.session.header.utilities`, polls the HTTP route and renders.
+- **Two data channels coexist**: the preset (real module) pushes via `ctx.emit` (standard Cordis API); the dynamic sandbox has no `ctx.emit`, so its client half uses its own `host.call('agy_status')` RPC. They do not interfere and show the same content.
+- `cordis.patch.yml` hot-reloads via Cordis HMR: bump `?v=N` after editing `lib/index.mjs`; refresh the browser after editing `lib/client.js`.
 
 ## Client half (`dynamic/client.js`)
 

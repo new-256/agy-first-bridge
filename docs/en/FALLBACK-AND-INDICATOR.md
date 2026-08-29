@@ -67,7 +67,7 @@ agy_run
 
 ---
 
-## 2. Live status light (dynamic form only)
+## 2. Live status light (dynamic form + home-level plugin; start-up persistent since v1.5.0)
 
 ### Location and appearance
 
@@ -83,25 +83,16 @@ The light is registered in the Slot `conversation.session.header.utilities` on t
 
 All colours come from DSH theme tokens, so the light adapts to light/dark automatically.
 
-### Data source
+### Data source (two channels)
 
-The host keeps an in-memory status snapshot **grouped by project (cwd)**, updating the relevant project before and after each agy call:
+**Channel one (dynamic form, Client→Host RPC):** the host exposes the read-only snapshot (global aggregation + `projects[]`) via `harness.handle('agy_status', () => snapshot())`; the client component pulls it every 1.2s with `ctx.interval` + `host.call('agy_status')` and re-renders per project, with each tooltip showing that project's `current` and recent `trail`. This is standard Client→Host package-private RPC, and the snapshot carries only scalar fields — no references to host live objects.
 
-```js
-projects[cwd] = { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, current, trail, updatedAt }
-begin(cwd)          // that project running++, state='running'
-end(res, cwd)       // that project running--, set ok/failed/fallback from the result; clear current
-foldStepUpdate(ev, cwd) // parse stream-json step_update events line by line → that project's current / trail
-```
+**Channel two (home-level plugin, event push + HTTP, v1.5.0):** the preset form (real Node module) emits `ctx.emit('agy/status', { snapshot })` after every `begin` / `end` / `foldStepUpdate`; the home-level `agy-indicator` host half collects it with `ctx.on('agy/status')`, merges by cwd into a global project table, and exposes `GET /agy-indicator/status` via `webServer`; the home-level client half polls that route every 1.2s and renders the same per-project lights. It **starts with the software, appears in every session, and needs no approval**. The dynamic sandbox has no `ctx.emit`, so the dynamic form uses channel one (both coexist and show the same content).
 
-Each project's `current` is the step that project's agy is **executing right now** (tool name + arguments, or agent_response thinking/typing); `trail` is its recent step history. Both are filled incrementally while the run is in flight, so the indicator (one pill per project) and the `agy_status` tool can show "what agy is doing" *during* a run, not only after it.
+### One-time approval (dynamic form only)
 
-The host exposes the read-only snapshot (global aggregation + `projects[]`) via `harness.handle('agy_status', () => snapshot())`; the client component pulls it every 1.2s with `ctx.interval` + `host.call('agy_status')` and re-renders per project, with each tooltip showing that project's `current` and recent `trail`. This is standard Client→Host package-private RPC, and the snapshot carries only scalar fields — no references to host live objects.
+The first time the client half of the **dynamic form** runs, the DSH GUI requests approval (Cordis's single/double-check grant mechanism). Once granted, the light appears. If the session disables approval prompts, the client half is auto-rejected — the fallback dialog still works, just without the dynamic light (the **home-level light is unaffected**).
 
-### One-time approval
+### Why the preset form itself has no status light
 
-The first time the client half runs, the DSH GUI requests approval (Cordis's single/double-check grant mechanism). Once granted, the light appears. If the session disables approval prompts, the client half is auto-rejected — the fallback dialog still works, just without the light.
-
-### Why the preset form has no status light
-
-A preset is a host-plane composition whose `.mjs` runs only on the Node side and carries no browser UI. Keeping a persistent status light in the preset form would require publishing a separate client plugin bundle (rebuilt with `pnpm run dev:web`), which is out of scope for this plugin. The fallback dialog is a host capability and is present in both forms.
+A preset is a host-plane composition whose `.mjs` runs only on the Node side and carries no browser UI; browser UI must come from a client-plane component. **Since v1.5.0 the home-level plugin (`home-plugin/agy-indicator/`, registered via `cordis.patch.yml`) fills this gap**: it brings its own host half (event collector + HTTP route) and client half (browser light), and the preset only needs to emit `ctx.emit('agy/status')` on state changes — no separate client bundle or `pnpm run dev:web` rebuild required. The fallback dialog is a host capability and is present in both the preset and dynamic forms.

@@ -65,7 +65,31 @@ Host 与 Client 之间只能通过包私有的 JSON RPC 通信：Host 用 `harne
 | 工具注册 | `harness.registerTool(ctx, harness.defineTool({...}))` | `ctx.tools.register(<纯对象 ToolDefinition>)` |
 | Host→Client RPC | `harness.handle('agy_status', ...)` | ⚠️ 无 Client 半，故不注册（也无消费者） |
 
-> 这也是**状态灯只在动态形态出现**的原因：Preset 是 Host 面组合，其 `.mjs` 只在 Node 侧运行，没有浏览器 UI；实时灯是 Client 面 Slot 组件，必须由动态 Cordis 插件的 Client 半加载。
+> 这也是早期**状态灯只在动态形态出现**的原因：Preset 是 Host 面组合，其 `.mjs` 只在 Node 侧运行，没有浏览器 UI；实时灯是 Client 面 Slot 组件，必须由动态 Cordis 插件的 Client 半加载。**v1.5.0 起新增家级插件形态解决持久性问题**（见下）。
+
+## 家级状态灯插件（`home-plugin/agy-indicator/`，v1.5.0+）
+
+状态灯不再依赖会话内动态插件（重启即失），而是通过 `cordis.patch.yml` 注册的家级插件实现**随软件启动、所有会话自动显示、无需审批**：
+
+```
+会话内 agy-first-bridge（preset 真模块）               DSH Host（root realm）
+  begin/end/foldStepUpdate ── ctx.emit('agy/status', {snapshot})
+                                          │  （事件 app 级广播，isolate realm 不隔离事件）
+                                          ▼
+                        agy-indicator host 半（lib/index.mjs）
+                          ctx.on('agy/status') → projects[cwd] 全局表
+                          webServer.register({kind:'exact', path:'/agy-indicator/status'})
+                                          │  GET → JSON {state, running, projects[]}
+                                          ▼
+                        DSH Client（浏览器）
+                          agy-indicator client 半（lib/client.js，花名册模块）
+                          fetch('/agy-indicator/status') 每 1.2s → 按项目渲染灯
+```
+
+- host 半 `lib/index.mjs`：`ctx.on('agy/status')` 收集快照，按 cwd 合并成全局项目表（10 分钟未更新的 idle 项目自动过滤，最多 24 项）；经 `webServer` 暴露 `GET /agy-indicator/status`。
+- client 半 `lib/client.js`：`window.__ModuleLoader__.load({id, factory})` 格式（同 `dsh-model-status`），挂 `conversation.session.header.utilities`，轮询 HTTP 路由渲染。
+- **两种数据通道并存**：preset 真模块用 `ctx.emit` 推送（标准 Cordis API）；动态沙箱无 `ctx.emit`，其 client 半用自己的 `host.call('agy_status')` RPC。两者互不干扰，灯的显示内容一致。
+- `cordis.patch.yml` 通过 Cordis HMR 热重载：改 `lib/index.mjs` 后 bump `?v=N`，改 `lib/client.js` 后刷新浏览器。
 
 ## Client 半（`dynamic/client.js`）
 

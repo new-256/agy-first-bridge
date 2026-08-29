@@ -29,6 +29,11 @@ jobs:
       - name: Syntax-check preset module
         run: node --check preset/agy-first/agy-first-bridge.mjs
 
+      - name: Syntax-check home-level plugin (agy-indicator)
+        run: |
+          node --check home-plugin/agy-indicator/lib/index.mjs
+          node --check home-plugin/agy-indicator/lib/client.js
+
       - name: Syntax-check and self-test MCP server
         run: |
           node --check mcp/agy-mcp-server.mjs

@@ -65,7 +65,7 @@ agy_run
 
 ---
 
-## 二、实时状态灯（仅动态形态）
+## 二、实时状态灯（动态形态 + 家级插件，v1.5.0 起随软件启动）
 
 ### 位置与外观
 
@@ -81,25 +81,16 @@ agy_run
 
 所有颜色都取自 DSH 主题 token，因此自动适配明暗主题。
 
-### 数据来源
+### 数据来源（两条通道）
 
-Host 维护**按项目（cwd）分组**的内存状态快照，每次 agy 调用前后更新对应项目：
+**通道一（动态形态，Client→Host RPC）**：Host 通过 `harness.handle('agy_status', () => snapshot())` 暴露只读快照（含全局聚合 + `projects[]`）；Client 组件用 `ctx.interval` 每 1.2s `host.call('agy_status')` 拉取并按项目重渲染，tooltip 展示该项目 `current` 与最近 `trail`。这是标准的 Client→Host 包私有 RPC，快照只含标量字段，不含任何 Host 活对象引用。
 
-```js
-projects[cwd] = { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, current, trail, updatedAt }
-begin(cwd)          // 该项目 running++，state='running'
-end(res, cwd)       // 该项目 running--，据结果置 ok/failed/fallback；清空 current
-foldStepUpdate(ev, cwd) // 逐行解析 stream-json 的 step_update 事件 → 该项目 current / trail
-```
+**通道二（家级插件，事件推送 + HTTP，v1.5.0）**：preset 形态（真 Node 模块）每次 `begin`/`end`/`foldStepUpdate` 后 `ctx.emit('agy/status', { snapshot })`；家级插件 `agy-indicator` 的 host 半 `ctx.on('agy/status')` 收集并按 cwd 合并成全局项目表，经 `webServer` 暴露 `GET /agy-indicator/status`；家级 client 半每 1.2s `fetch` 该路由渲染同样的灯。**随软件启动、所有会话自动显示、无需审批**。动态沙箱无 `ctx.emit`，故动态形态走通道一（两者并存、内容一致）。
 
-每个项目的 `current` 是该项目 agy **此刻正在执行的步骤**（工具名 + 参数，或 agent_response 思考/打字中）；`trail` 是最近 N 条步骤轨迹。它们由运行期间的增量解析实时填充，因此状态灯（**每项目一盏**）与 `agy_status` 工具都能在 agy 运行中就显示「它正在干什么」。
+### 一次性审批（仅动态形态）
 
-Host 通过 `harness.handle('agy_status', () => snapshot())` 暴露只读快照（含全局聚合 + `projects[]`）；Client 组件用 `ctx.interval` 每 1.2s `host.call('agy_status')` 拉取并按项目重渲染，tooltip 展示该项目 `current` 与最近 `trail`。这是标准的 Client→Host 包私有 RPC，快照只含标量字段，不含任何 Host 活对象引用。
+动态形态的 Client 半首次运行时，DSH GUI 会请求审批（Cordis 的单勾/双勾授权机制）。批准后状态灯即出现。若会话禁用了审批提示，Client 半会被自动拒绝——此时回退弹窗仍可用，只是没有动态灯（**家级灯不受影响**）。
 
-### 一次性审批
+### 为什么 Preset 形态本身没有状态灯
 
-Client 半首次运行时，DSH GUI 会请求审批（Cordis 的单勾/双勾授权机制）。批准后状态灯即出现。若会话禁用了审批提示，Client 半会被自动拒绝——此时回退弹窗仍可用，只是没有状态灯。
-
-### 为什么 Preset 形态没有状态灯
-
-Preset 是 Host 面组合，其 `.mjs` 只在 Node 侧运行、不含浏览器 UI。要在 Preset 形态也常驻状态灯，需要额外发布一个 Client 插件 bundle（并配合 `pnpm run dev:web` 重建），不在本插件范围内。回退弹窗是 Host 能力，两种形态都具备。
+Preset 是 Host 面组合，其 `.mjs` 只在 Node 侧运行、不含浏览器 UI；浏览器 UI 必须由 Client 面组件提供。**v1.5.0 起通过家级插件（`home-plugin/agy-indicator/`，`cordis.patch.yml` 注册）补齐**：它带独立的 host 半（收集事件 + HTTP 路由）与 client 半（浏览器灯），preset 只需在状态变化时 `ctx.emit('agy/status')` 推送即可，无需发布额外 client bundle 或重建 web 产物。回退弹窗是 Host 能力，preset 与动态两种形态都具备。

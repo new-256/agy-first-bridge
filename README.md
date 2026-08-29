@@ -18,20 +18,23 @@
 在此基础上，本插件还实现了用户要求的几项关键能力：
 
 - **回退机制（弹窗确认）**：当 agy 疑似被限流或网络不通时，自动弹出确认框，让用户选择「使用 DSH 本地 API 配置（回退）」/「重试 agy 一次」/「不回退」。
-- **实时状态灯（按项目）**：浏览器会话标题栏右侧的彩色指示灯**为每个项目（工作目录）分别显示一盏**，随该项目 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退），悬停可查看该项目**当前正在执行的步骤**。
+- **实时状态灯（按项目，随软件启动）**：浏览器会话标题栏右侧的彩色指示灯**为每个项目（工作目录）分别显示一盏**，随该项目 agy 活动实时变化（工作中 / 成功 / 失败 / 本地回退），悬停可查看该项目**当前正在执行的步骤**。状态灯是**家级插件**（[`home-plugin/agy-indicator/`](home-plugin/agy-indicator/)，经 `cordis.patch.yml` 注册），随 DSH 启动自动加载、所有会话自动显示、无需审批。
 - **实时观察（agy_status）**：`agy_status` 工具随时返回各项目 agy 此刻在干什么 —— 每个项目当前步骤（工具名 + 参数或思考/打字中）、最近步骤轨迹、最近完成运行。支持 `cwd` 参数只看某个项目。运行中即可调用，无需等待结束。
 
-## 三种形态
+## 四种形态
 
-同一套逻辑提供三种落地形态，按需选择：
+同一套逻辑提供四种落地形态，按需选择：
 
 | 形态 | 位置 | 能力 | 是否随进程重启保留 | 状态灯 |
 | --- | --- | --- | --- | --- |
 | **持久 Agent Preset**（DSH 内推荐） | [`preset/agy-first/`](preset/agy-first/) | 工具 + 优先策略 + 回退弹窗 + `agy_status` | ✅ 是（落盘为 preset） | ❌ 无（Host 面组合不含浏览器 UI） |
+| **家级状态灯插件**（随软件启动） | [`home-plugin/agy-indicator/`](home-plugin/agy-indicator/) | 状态灯（所有会话自动显示，无需审批） | ✅ 是（cordis.patch.yml 注册） | ✅ 有 |
 | **动态 Cordis 插件**（当前会话） | [`dynamic/`](dynamic/) | 工具 + 优先策略 + 回退弹窗 + **状态灯** + `agy_status` | ❌ 否（进程内临时） | ✅ 有（需一次性审批） |
 | **MCP 服务器**（任何 MCP 宿主） | [`mcp/`](mcp/) | `agy_run` / `agy_continue` / `agy_status` 通过 `tools/list` 被 Claude Code、Codex、Cherry Studio 等**自动发现**，由宿主代理自主决定是否调用 | ✅ 是（注册进客户端配置） | ❌ 无 |
 
-> **为什么状态灯只在动态形态里？** Agent Preset 是 **Host 面** 组合（`agent.cordis.yml` 挂载 Host 插件），其中的 `.mjs` 只在 Node 侧运行，天然不含浏览器 UI；而实时状态灯是 **Client 面**（浏览器 Slot）组件，需要通过动态 Cordis 插件的 Client 半加载（首次运行时在 GUI 里一次性审批）。回退弹窗是 Host 侧能力，**两种形态都具备**；MCP 形态没有 UI，限流时改为在结果文本中附加「勿循环重试」提示，由调用方代理决定回退。
+> **状态灯为什么需要家级插件？** Agent Preset 是 **Host 面** 组合（`agent.cordis.yml` 挂载 Host 插件），其中的 `.mjs` 只在 Node 侧运行，天然不含浏览器 UI；而实时状态灯是 **Client 面**（浏览器 Slot）组件。**家级插件**（`cordis.patch.yml` 注册，如 `home-plugin/agy-indicator/`）同时提供 Host 半（收集各会话推送的 agy 状态 + HTTP 路由）与 Client 半（浏览器轮询渲染），随 DSH 启动自动加载、所有会话自动显示、无需审批。动态插件形态（首次运行需 GUI 一次性审批）与家级形态的灯可并存：动态形态用自己的 host.call RPC，家级形态用事件推送。
+>
+> 回退弹窗是 Host 侧能力，preset 与动态两种形态都具备；MCP 形态没有 UI，限流时改为在结果文本中附加「勿循环重试」提示，由调用方代理决定回退。
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
@@ -57,11 +60,35 @@ Copy-Item -Recurse .\preset\agy-first "$env:DSH_HOME\.agent-presets\agy-first"
 
 完整步骤与校验方法见 [docs/INSTALL.md](docs/INSTALL.md)。
 
-### 方式 B：作为动态 Cordis 插件运行（含状态灯）
+### 方式 B：安装家级状态灯插件（随软件启动、所有会话可见）
+
+把 [`home-plugin/agy-indicator/`](home-plugin/agy-indicator/) 复制到 DSH 家级插件目录并注册到 `cordis.patch.yml`，状态灯即随 DSH 启动自动加载、所有会话自动显示、无需审批：
+
+```powershell
+# 1) 复制插件源码
+$dshHome = "$env:APPDATA\DSH Desktop\dsh-home"
+Copy-Item -Recurse .\home-plugin\agy-indicator "$dshHome\plugins\agy-indicator"
+
+# 2) 建 junction（host 解析与浏览器花名册都需要）
+New-Item -ItemType Junction -Path "$dshHome\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+
+# 3) 在 cordis.patch.yml 末尾追加两行（HMR 自动热载，无需重启）：
+#    - insert:
+#        - id: agy-indicator
+#          name: file:///.../plugins/agy-indicator/lib/index.mjs?v=1
+#    - insert:
+#        - id: agy-indicator-client
+#          name: agy-indicator
+```
+
+配合 **preset 形态**（方式 A）使用：preset 里的 `agy-first-bridge.mjs` 每次状态变化会 `ctx.emit('agy/status')` 推送到家级收集器，灯随之实时更新；改 `lib/index.mjs` 后 bump `?v=N` 即热载，改 `lib/client.js` 后刷新浏览器即生效。
+
+### 方式 C：作为动态 Cordis 插件运行（含状态灯）
 
 在一个已加载 Cordis 能力的 DSH 会话里，用 `cordis_define` + `cordis_run` 定义并激活插件，Host 半用 [`dynamic/host.js`](dynamic/host.js)，Client 半用 [`dynamic/client.js`](dynamic/client.js)。首次运行 Client 半时，DSH GUI 会请求一次性审批，批准后状态灯即出现在会话标题栏。
 
-### 方式 C：作为 MCP 服务器注册（任何 MCP 宿主可发现）
+### 方式 D：作为 MCP 服务器注册（任何 MCP 宿主可发现）
 
 不需要 DSH 时，把 [`mcp/agy-mcp-server.mjs`](mcp/agy-mcp-server.mjs) 注册为 MCP 服务器，Claude Code / Codex / Cherry Studio 等宿主即可通过 `tools/list` 自动发现 `agy_run` / `agy_continue` / `agy_status` 并自主决定调用：
 
@@ -111,7 +138,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.4.0，Node ≥18）
+├─ package.json                 # 版本元数据（v1.5.0，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -120,6 +147,12 @@ agy-first-bridge/
 │     ├─ preset.yml              #   名称/描述
 │     ├─ agent.cordis.yml        #   组合：standard + 一行 agy 插件
 │     └─ agy-first-bridge.mjs    #   自包含、零依赖的 Host 插件模块
+├─ home-plugin/
+│  └─ agy-indicator/             # 家级状态灯插件（随软件启动、所有会话可见）
+│     ├─ package.json            #   dsh.client 声明（浏览器花名册）
+│     └─ lib/
+│        ├─ index.mjs            #   Host 半：收集 agy/status 事件 + HTTP 路由
+│        └─ client.js            #   浏览器半：轮询渲染每项目灯
 ├─ dynamic/                      # 动态 Cordis 插件形态（含状态灯）
 │  ├─ host.js                    #   code.host 函数体
 │  └─ client.js                  #   code.client 函数体（浏览器状态灯）
@@ -130,7 +163,7 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.4.0）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.0）
    └─ en/                        # 英文文档
 ```
 
@@ -140,6 +173,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | **状态灯随软件启动**：家级插件 `agy-indicator`（cordis.patch.yml 注册，所有会话自动显示、无需审批）；preset 每次状态变化推送事件到家级收集器 |
 | [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | **UI 状态灯按项目分别显示**：per-project 快照（按 cwd 分组）、每项目一盏灯、`agy_status` 支持 `cwd` 过滤、双项目并发验证 |
 | [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **实时观察**：所有形态改用 `stream-json` 逐事件解析，新增 `agy_status` 工具（当前步骤/轨迹/最近运行），状态灯 tooltip 显示当前步骤 |
 | [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH 随软件自启（默认 preset `cordis-agy`）、DSH 内 MCP 注册、外部软件 MCP 注册（Claude Code/Codex）、披露并优先策略、版本管理 |
@@ -160,7 +194,7 @@ agy-first-bridge/
 
 `agy-first-bridge` is a Cordis plugin for the **DeepSeek Harness (DSH)**. It registers two model tools (`agy_run`, `agy_continue`) that dispatch real work to the local **`agy` CLI** under full DSH control (`--dangerously-skip-permissions`, so agy never prompts), and injects an *agy-first* policy so the model prefers agy across every mode. When agy is **rate-limited or the network is down**, it pops a confirmation dialog offering the **DSH local API config** as a fallback, and it renders a **live status light** in the session header showing whether agy is currently working.
 
-Two forms are shipped: a **persistent agent preset** (`preset/agy-first/`, survives restart, host-side fallback included) and a **dynamic Cordis plugin** (`dynamic/`, adds the browser status light, needs a one-time approval). A third form, [`mcp/`](mcp/), is a zero-dependency **MCP server** that exposes `agy_run` / `agy_continue` to *any* MCP-capable host (Claude Code, Codex, Cherry Studio, …), where the agent discovers the tools itself and decides when to call them — even without any agy-first preset.
+Four forms are shipped: a **persistent agent preset** (`preset/agy-first/`, survives restart, host-side fallback included), a **home-level status-light plugin** (`home-plugin/agy-indicator/`, registered via `cordis.patch.yml`, the light appears in every session with no approval), a **dynamic Cordis plugin** (`dynamic/`, adds the browser status light, needs a one-time approval), and [`mcp/`](mcp/), a zero-dependency **MCP server** that exposes `agy_run` / `agy_continue` to *any* MCP-capable host (Claude Code, Codex, Cherry Studio, …), where the agent discovers the tools itself and decides when to call them — even without any agy-first preset.
 
 👉 **Full English documentation: [README.en.md](README.en.md)** — with English guides under [`docs/en/`](docs/en/) (install, architecture, fallback & indicator).
 

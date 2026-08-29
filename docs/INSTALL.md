@@ -1,6 +1,12 @@
 # 安装指南
 
-本插件提供两种形态。**多数用户直接用「持久 Agent Preset」即可**；需要浏览器状态灯时再用「动态 Cordis 插件」。
+本插件提供三种形态，可组合使用：
+
+1. **持久 Agent Preset** —— 工具 + 优先策略 + 回退弹窗 + `agy_status`（多数用户首选）；
+2. **家级状态灯插件**（v1.5.0+）—— 状态灯随软件启动、所有会话自动显示、无需审批（与方式 A 搭配，见方式 B）；
+3. **动态 Cordis 插件** —— 进程内临时形态，额外带浏览器状态灯（需一次性审批，见方式 C）。
+
+**推荐组合：方式 A + 方式 B**，一次安装，工具与常驻状态灯齐备，随 DSH 启动即用。
 
 ---
 
@@ -85,9 +91,46 @@ node --check ./preset/agy-first/agy-first-bridge.mjs
 
 ---
 
-## 方式 B：动态 Cordis 插件（含浏览器状态灯）
+## 方式 B：家级状态灯插件（随软件启动、所有会话可见，v1.5.0+）
 
-动态形态是进程内临时插件，**进程重启后消失**，但它额外带来会话标题栏的实时状态灯。
+把 [`home-plugin/agy-indicator/`](../home-plugin/agy-indicator/) 安装为 DSH 家级插件，状态灯即随 DSH 启动自动加载、所有会话自动显示、无需审批。**推荐与方式 A 搭配**：preset 每次状态变化会 `ctx.emit('agy/status')` 推送，家级收集器接收后经 HTTP 路由暴露，浏览器灯轮询渲染。
+
+```powershell
+$dshHome = "$env:APPDATA\DSH Desktop\dsh-home"   # 或你的 DSH 家目录
+
+# 1) 复制插件源码
+Copy-Item -Recurse .\home-plugin\agy-indicator "$dshHome\plugins\agy-indicator"
+
+# 2) 建 junction（host 解析与浏览器花名册都需要）
+New-Item -ItemType Junction -Path "$dshHome\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
+
+# 3) 在 cordis.patch.yml 末尾追加两行（Cordis HMR 自动热载，无需重启）：
+#    - insert:
+#        - id: agy-indicator
+#          name: file:///.../plugins/agy-indicator/lib/index.mjs?v=1
+#    - insert:
+#        - id: agy-indicator-client
+#          name: agy-indicator
+```
+
+校验：
+
+```powershell
+# host 路由（浏览器灯的数据源）
+Invoke-WebRequest -Uri "http://127.0.0.1:<DSH端口>/agy-indicator/status"   # → {"state":"idle","running":0,"projects":[]}
+
+# client 模块已入浏览器花名册
+Invoke-WebRequest -Uri "http://127.0.0.1:<DSH端口>/plugins/agy-indicator/client.js"  # → 200
+```
+
+改 `lib/index.mjs` 后 bump `?v=N` 即热载；改 `lib/client.js` 后刷新浏览器即生效。
+
+---
+
+## 方式 C：动态 Cordis 插件（进程内临时形态）
+
+动态形态是进程内临时插件，**进程重启后消失**，但它自带浏览器状态灯（通过 Client→Host RPC，不依赖家级插件）。
 
 1. 在一个已加载 Cordis 能力的 DSH 会话里，用 `cordis_define` 定义插件：
    - `code.host` = [`dynamic/host.js`](../dynamic/host.js) 的完整内容；
@@ -96,11 +139,12 @@ node --check ./preset/agy-first/agy-first-bridge.mjs
 3. 首次运行 **Client 半** 时，DSH GUI 会弹出一次性审批（单勾仅授权当前包，双勾授权后续版本）。批准后，状态灯出现在会话标题栏右侧。
 4. 需要临时停用用 `cordis_stop`；彻底删除用 `cordis_undefine`。
 
-> 若本会话禁用了审批提示，Client 半会被自动拒绝——此时改用方式 A（回退弹窗依然可用，只是没有状态灯）。
+> 若本会话禁用了审批提示，Client 半会被自动拒绝——改用「方式 A + 方式 B」组合：回退弹窗与家级状态灯依然可用。
 
 ---
 
 ## 卸载
 
 - **Preset**：删除 `.agent-presets/agy-first/` 目录即可（下次读取 roster 时消失）。
+- **家级状态灯插件**：从 `cordis.patch.yml` 移除两行（HMR 自动卸载），删除 `dsh-home/plugins/agy-indicator/` 与两个 junction（`node_modules\agy-indicator`、`profiles\node_modules\agy-indicator`）。
 - **动态插件**：`cordis_undefine <pluginId>`。
