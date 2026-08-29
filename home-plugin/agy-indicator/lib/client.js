@@ -9,7 +9,15 @@
 //   fallback → 琥珀色圆点, "↩ 项目名"
 //   idle     → 灰色圆点, "项目名"（仅当该项目仍在表中）
 //
-// 无任何项目数据时显示单个占位 pill "AGY 就绪"。
+// 显示策略（v1.5.4）：
+// - presetActive=true（当前有 agy 优先会话在线）→ 常驻显示：无项目数据时
+//   显示单个占位 pill "AGY 就绪"。
+// - presetActive=false（普通模式会话）→ 仅在有项目数据时显示（调用 agy 时
+//   临时出现，空闲时隐藏），不渲染占位。
+//
+// 动态形态（无 ctx.emit 的沙箱插件）不再自己注册标题栏灯；它通过家级 host
+// 暴露的 agyCollector 服务把状态推入同一张表，由本灯统一显示。因此全软件
+// 只会有这一个 agy 状态灯。
 //
 // 实现纪律（对齐产品 dsh-model-status 的成熟模式）：
 // - 轮询只用浏览器原生 setInterval/clearInterval，组件内不引用任何 Cordis ctx，
@@ -100,7 +108,12 @@ window.__ModuleLoader__.load({
           if (timerId !== null) clearInterval(timerId);
         };
       }, []);
-      if (s && Array.isArray(s.projects) && s.projects.length) {
+      const hasProjects = s && Array.isArray(s.projects) && s.projects.length;
+      // 非 agy 优先模式且无项目数据：不渲染（普通模式调用 agy 时才显示）。
+      if (!hasProjects && !(s && s.presetActive)) {
+        return null;
+      }
+      if (hasProjects) {
         return react.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: "6px" } },
           s.projects.map(function (p, i) { return react.createElement(Pill, { key: p.cwd || ("p" + i), p: p }); }));
       }

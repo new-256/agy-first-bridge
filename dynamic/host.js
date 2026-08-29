@@ -167,13 +167,17 @@ return {
     }
 
     // Publish the current snapshot to the home-level agy-indicator collector.
-    // NOTE (dynamic form): the Cordis host sandbox does NOT expose ctx.emit —
-    // the runner guard rejects any access to it (and emits a guard warning), so
-    // this publish is intentionally a no-op in the dynamic form. The dynamic
-    // form's own browser light reads status via the agy_status RPC
-    // (host.call('agy_status')) instead. The PRESET form (real Node module)
-    // keeps the real ctx.emit push in ../preset/agy-first/agy-first-bridge.mjs.
-    function publish() { /* no-op in dynamic sandbox (ctx.emit unavailable) */ }
+    // Dynamic sandbox has no ctx.emit, so instead of an event we call the
+    // home-level collector service (ctx.provide('agyCollector', ...) in
+    // home-plugin/agy-indicator/lib/index.mjs) and merge the snapshot into the
+    // SAME global table the home light polls. This keeps ONE light in the whole
+    // app: the home-level one. The PRESET form uses ctx.emit('agy/status').
+    function publish() {
+      try {
+        const collector = ctx.get('agyCollector')
+        if (collector && typeof collector.mergeSnapshot === 'function') collector.mergeSnapshot(snapshot())
+      } catch (e) { /* ignore */ }
+    }
     harness.handle('agy_status', function () { return snapshot() })
 
     function resolveCwd(args) { if (args && args.cwd) return String(args.cwd); if (sandboxPolicy && typeof sandboxPolicy.workspaceRoot === 'string' && sandboxPolicy.workspaceRoot) return sandboxPolicy.workspaceRoot; return CWD_FALLBACK }

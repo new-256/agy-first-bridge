@@ -1,13 +1,23 @@
 // agy-indicator — host half.
 //
-// 收集各会话 agy-first-bridge 插件（preset 或动态形态）通过 ctx.emit('agy/status')
-// 推送的 agy 运行快照，维护一张按项目（工作目录 cwd）索引的全局表，并通过
-// webServer 注册 GET /agy-indicator/status 路由暴露给浏览器。
+// 收集各会话 agy-first-bridge 插件（preset 或动态形态）推送的 agy 运行快照，
+// 维护一张按项目（工作目录 cwd）索引的全局表，并通过 webServer 注册
+// GET /agy-indicator/status 路由暴露给浏览器。
+//
+// 两个数据入口：
+//   1. preset 形态（真 Node 模块，agy-first-bridge preset）：apply 时
+//      ctx.emit('agy/mode', { active: true }) 宣告 agy 优先模式；每次状态
+//      变化 ctx.emit('agy/status', { snapshot }) 推送快照。
+//   2. 动态形态（当前会话的 cordis 动态插件，沙箱无 ctx.emit）：通过
+//      ctx.provide 暴露的 agyCollector 服务调用 mergeSnapshot(snapshot) 推入。
 //
 // 家级（cordis.patch.yml）插件运行在 host 组合的 root realm；会话内插件的
 // ctx.emit 事件是 app 级广播，不受 isolate realm（只隔离服务）影响。
 //
-// 路由 handler 是标准 Node http (req, res)；返回 JSON：{ state, running, projects[] }。
+// 路由返回 JSON：{ state, running, projects[], presetActive }。
+// presetActive=true 表示当前有 agy 优先会话在线 → 家级灯常驻显示（idle 也
+// 显示 "AGY 就绪"）；presetActive=false 时家级灯仅在有项目数据时显示
+// （调用 agy 时临时出现，空闲隐藏）。
 // 客户端（lib/client.js）每 1.2s 轮询一次并按项目渲染状态灯。
 
 export const name = 'agy-indicator'
@@ -16,6 +26,8 @@ export function apply(ctx) {
   // cwd -> project record（全局视角：项目按工作目录唯一）
   const projects = Object.create(null)
   const MAX_PROJECTS = 24
+  // 是否有 agy 优先会话在线（preset 挂载时 emit 'agy/mode' 置真）
+  let presetActive = false
 
   function projectName(cwd) {
     const s = String(cwd || '')
@@ -54,7 +66,14 @@ export function apply(ctx) {
     }
   }
 
-  // 监听会话内 agy-first-bridge 的推送
+  // preset 形态挂载时宣告 agy 优先模式（常驻灯依据）
+  ctx.on('agy/mode', (payload) => {
+    try {
+      presetActive = !!(payload && payload.active)
+    } catch (e) { /* ignore */ }
+  })
+
+  // 监听会话内 agy-first-bridge（preset 形态）的事件推送
   ctx.on('agy/status', (payload) => {
     try {
       const snap = payload && typeof payload === 'object' && payload.snapshot ? payload.snapshot : payload
@@ -63,6 +82,11 @@ export function apply(ctx) {
       // 快照合并失败不应影响宿主；忽略单次坏负载
     }
   })
+
+  // 暴露服务给动态形态（沙箱无 ctx.emit，通过服务方法推入）。
+  // 注意：该服务被 ctx.provide 后，会话内动态插件可 ctx.get('agyCollector')。
+  const collectorService = { mergeSnapshot }
+  ctx.provide('agyCollector', collectorService)
 
   // webServer 就绪后注册路由（用 ctx.inject 子纤维等待晚就绪服务，同 bot-gateway）
   if (typeof ctx.inject === 'function') {
@@ -84,7 +108,7 @@ export function apply(ctx) {
               .sort((a, b) => b.updatedAt - a.updatedAt)
             const running = list.reduce((n, p) => n + p.running, 0)
             const state = running > 0 ? 'running' : (list.some((p) => p.fallbackActive) ? 'fallback' : (list.length ? 'ok' : 'idle'))
-            const body = JSON.stringify({ state, running, projects: list })
+            const body = JSON.stringify({ state, running, projects: list, presetActive })
             res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
             res.end(body)
           } catch (e) {

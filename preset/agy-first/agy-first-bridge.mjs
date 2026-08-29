@@ -221,6 +221,16 @@ export function apply(ctx) {
     try { ctx.emit('agy/status', { snapshot: statusSnapshot() }) } catch (e) { /* ignore */ }
   }
 
+  // 宣告 agy 优先模式：家级灯据此决定常驻显示（presetActive）。
+  // preset 挂载即宣告；周期性续期，避免会话空闲时被误判为非 agy 模式。
+  // （动态形态沙箱无 ctx.emit，靠 ctx.get('agyCollector').mergeSnapshot 推状态，
+  //   不宣告模式 → 普通模式灯仅在调用 agy 时临时显示。）
+  function announceMode() {
+    try { ctx.emit('agy/mode', { active: true }) } catch (e) { /* ignore */ }
+  }
+  announceMode()
+  try { const t = ctx.setInterval ? ctx.setInterval(announceMode, 30000) : null; if (t && ctx.effect) ctx.effect(() => () => { try { t() } catch (e) {} }) } catch (e) {}
+
   function resolveCwd(args) {
     if (args && args.cwd) return String(args.cwd)
     if (sandboxPolicy && typeof sandboxPolicy.workspaceRoot === 'string' && sandboxPolicy.workspaceRoot) return sandboxPolicy.workspaceRoot
