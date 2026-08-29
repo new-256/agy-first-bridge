@@ -67,36 +67,38 @@ Host 与 Client 之间只能通过包私有的 JSON RPC 通信：Host 用 `harne
 
 > 这也是早期**状态灯只在动态形态出现**的原因：Preset 是 Host 面组合，其 `.mjs` 只在 Node 侧运行，没有浏览器 UI；实时灯是 Client 面 Slot 组件，必须由动态 Cordis 插件的 Client 半加载。**v1.5.0 起新增家级插件形态解决持久性问题**（见下）。
 
-## 家级状态灯插件（`home-plugin/agy-indicator/`，v1.5.0+）
+## 家级状态灯插件（`home-plugin/agy-indicator/`，v1.5.0+；v1.5.4 统一为一盏灯）
 
-状态灯不再依赖会话内动态插件（重启即失），而是通过 `cordis.patch.yml` 注册的家级插件实现**随软件启动、所有会话自动显示、无需审批**：
+状态灯不再依赖会话内动态插件（重启即失），而是通过 `cordis.patch.yml` 注册的家级插件实现**随软件启动、所有会话自动显示、无需审批**。**v1.5.4 起全软件只有这一盏灯**：动态形态不再自渲染 UI，其状态经 `agyCollector` 服务推入同一张表，由家级灯统一呈现。
 
 ```
-会话内 agy-first-bridge（preset 真模块）               DSH Host（root realm）
-  begin/end/foldStepUpdate ── ctx.emit('agy/status', {snapshot})
-                                          │  （事件 app 级广播，isolate realm 不隔离事件）
-                                          ▼
-                        agy-indicator host 半（lib/index.mjs）
-                          ctx.on('agy/status') → projects[cwd] 全局表
-                          webServer.register({kind:'exact', path:'/agy-indicator/status'})
-                                          │  GET → JSON {state, running, projects[]}
-                                          ▼
-                        DSH Client（浏览器）
-                          agy-indicator client 半（lib/client.js，花名册模块）
-                          fetch('/agy-indicator/status') 每 1.2s → 按项目渲染灯
+会话内 agy-first-bridge                              DSH Host（root realm）
+  ┌─ preset 形态（真 Node 模块）：                ┌─ agy-indicator host 半（lib/index.mjs）
+  │   begin/end/foldStepUpdate                    │   ctx.on('agy/status') → projects[cwd] 全局表
+  │   ── ctx.emit('agy/status', {snapshot}) ─────►│   ctx.on('agy/mode')   → presetActive 标志
+  │   （挂载时 emit agy/mode {active:true}，30s 续期）│   ctx.provide('agyCollector', {mergeSnapshot})
+  │                                                │   webServer.register({kind:'exact', path:'/agy-indicator/status'})
+  └─ 动态形态（沙箱无 ctx.emit）：                 │   GET → JSON {state, running, projects[], presetActive}
+      publish() → ctx.get('agyCollector')           │
+      .mergeSnapshot(snapshot()) ─────────────────►│   （服务方法调用，无需事件）
+                                                    ▼
+                                        DSH Client（浏览器）
+                                          agy-indicator client 半（lib/client.js，花名册模块）
+                                          fetch('/agy-indicator/status') 每 1.2s → 按项目渲染灯
 ```
 
-- host 半 `lib/index.mjs`：`ctx.on('agy/status')` 收集快照，按 cwd 合并成全局项目表（10 分钟未更新的 idle 项目自动过滤，最多 24 项）；经 `webServer` 暴露 `GET /agy-indicator/status`。
-- client 半 `lib/client.js`：`window.__ModuleLoader__.load({id, factory})` 格式（同 `dsh-model-status`），挂 `conversation.session.header.utilities`，轮询 HTTP 路由渲染。
-- **两种数据通道并存**：preset 真模块用 `ctx.emit` 推送（标准 Cordis API）；动态沙箱无 `ctx.emit`，其 client 半用自己的 `host.call('agy_status')` RPC。两者互不干扰，灯的显示内容一致。
+- host 半 `lib/index.mjs`：
+  - `ctx.on('agy/status')`（preset 事件通道）与 `agyCollector` 服务（动态形态通道）都汇入同一张 `projects[cwd]` 全局表（idle 项目按模式过滤，最多 24 项）。
+  - `ctx.provide('agyCollector', { mergeSnapshot })`：动态沙箱插件通过服务方法推送快照（沙箱无 `ctx.emit`）。
+  - `presetActive` 标志：preset 挂载时 `ctx.emit('agy/mode', {active:true})` 置真（每 30s 续期），路由随响应返回。
+  - 显示策略：`presetActive=true` → 常驻（ok/idle 保留 10 分钟 TTL）；`presetActive=false` → 仅运行/回退时显示，ok/failed 保留 8 秒后隐藏。
+- client 半 `lib/client.js`：`window.__ModuleLoader__.load({id, factory})` 格式（同 `dsh-model-status`），挂 `conversation.session.header.utilities`，轮询 HTTP 路由渲染；无项目且 `presetActive=false` 时**不渲染**（普通模式空闲无灯）。
+- **裸名行占位 `lib/client-entry.mjs`（v1.5.4 崩溃修复）**：patch 中裸名行 `agy-indicator`（供 client-modules 扫描花名册）经 `package.json` 的 `main` 解析；`main`/`exports["."]` 必须指向本空占位而非 `index.mjs`，否则同一宿主逻辑被 file:// 行与裸名行加载成两个模块实例（ESM URL 不同），`apply` 执行两次 → `ctx.provide` 二次注册同名服务 → 后端启动崩溃。host 逻辑仅由 file:// 行加载。
 - `cordis.patch.yml` 通过 Cordis HMR 热重载：改 `lib/index.mjs` 后 bump `?v=N`，改 `lib/client.js` 后刷新浏览器。
 
 ## Client 半（`dynamic/client.js`）
 
-- `inject: ['timer']`，`ctx.get('slots')` 可选读取。
-- 用 `styles.insert(css)` 注入带呼吸动画的样式（`ctx.effect` 包裹，随插件卸载清理）。
-- `Indicator` 组件在 `React.useEffect` 里用 `ctx.interval(tick, 1200)` 每 1.2s 调 `host.call('agy_status')`，**为每个项目渲染一盏灯**（快照 `projects[]`），据各项目 `state` 上色 + 项目名；tooltip 显示该项目 `current` 步骤与最近 `trail`；卸载时释放定时器。
-- 注册到 Slot `conversation.session.header.utilities`（session 作用域，列表型），`id: 'agy-indicator'`。
+- v1.5.4 起为**空骨架**：动态形态不再注册自己的标题栏灯（避免与家级灯重复），UI 统一由家级 `agy-indicator` 呈现；动态插件通过 `ctx.get('agyCollector').mergeSnapshot(snapshot())` 把状态推入家级收集器。
 
 ## 生命周期与可逆性
 

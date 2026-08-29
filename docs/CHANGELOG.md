@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.4] - 2026
+
+### Added
+- **全软件统一为一盏 agy 状态灯**：此前动态插件（当前会话）与家级插件（全局）各自渲染标题栏灯，普通模式下会出现两盏 "AGY 就绪"。v1.5.4 起动态形态**不再注册自己的灯**，改为通过家级 host 暴露的 `agyCollector` 服务（`ctx.provide('agyCollector', { mergeSnapshot })`）把快照推入**同一张全局表**，由家级灯统一显示——任何形态（preset 或动态）的 agy 活动都反映在同一盏灯上。
+- **模式感知的显示策略**：
+  - `presetActive=true`（有 agy 优先会话在线，preset 挂载时 `ctx.emit('agy/mode', {active:true})` 宣告、每 30s 续期）：家级灯**常驻**显示，无项目时显示占位 "AGY 就绪"。
+  - `presetActive=false`（普通模式会话）：家级灯**仅调用 agy 时临时出现**——运行/回退期间显示，ok/failed 结果保留 8 秒后隐藏，空闲时标题栏无灯。
+
+### Fixed
+- **后端启动崩溃（`service "agyCollector" has been registered`）**：patch 中裸名行 `agy-indicator` 通过 `package.json` 的 `main` 解析，此前 `main` 指向 `lib/index.mjs`，导致同一份宿主逻辑被 file:// 行与裸名行加载成两个模块实例（ESM URL 不同），`apply` 执行两次、`ctx.provide('agyCollector')` 二次注册同名服务 → 后端启动失败。修复：新增 `lib/client-entry.mjs`（空操作占位），`main`/`exports["."]` 改指向该占位，裸名行只承担 client-modules 花名册扫描职责，宿主逻辑仅由 file:// 行加载；`index.mjs` 的 `provide` 加 try/catch 双保险。
+- 目视实测（普通模式 + 动态形态）：空闲无灯 → `⟳ DSH` 品牌色脉冲（运行中）→ `✓ DSH` 绿点（完成后 8 秒）→ 灯消失。
+
 ## [1.5.3] - 2026
 
 ### Fixed

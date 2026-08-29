@@ -17,7 +17,8 @@
 // 路由返回 JSON：{ state, running, projects[], presetActive }。
 // presetActive=true 表示当前有 agy 优先会话在线 → 家级灯常驻显示（idle 也
 // 显示 "AGY 就绪"）；presetActive=false 时家级灯仅在有项目数据时显示
-// （调用 agy 时临时出现，空闲隐藏）。
+// （调用 agy 时临时出现：运行/回退期间显示，ok/failed 结果短暂保留 8 秒后
+// 隐藏，空闲时标题栏无灯）。
 // 客户端（lib/client.js）每 1.2s 轮询一次并按项目渲染状态灯。
 
 export const name = 'agy-indicator'
@@ -85,8 +86,11 @@ export function apply(ctx) {
 
   // 暴露服务给动态形态（沙箱无 ctx.emit，通过服务方法推入）。
   // 注意：该服务被 ctx.provide 后，会话内动态插件可 ctx.get('agyCollector')。
-  const collectorService = { mergeSnapshot }
-  ctx.provide('agyCollector', collectorService)
+  // 防御：若已被注册（理论上 client-entry.mjs 占位保证裸名行不再加载本文件，
+  // 双保险防止同进程重复 apply 时二次注册同名服务导致启动崩溃），跳过。
+  try {
+    ctx.provide('agyCollector', { mergeSnapshot })
+  } catch (e) { /* already provided */ }
 
   // webServer 就绪后注册路由（用 ctx.inject 子纤维等待晚就绪服务，同 bot-gateway）
   if (typeof ctx.inject === 'function') {
@@ -99,12 +103,23 @@ export function apply(ctx) {
         handler: (req, res) => {
           try {
             const now = Date.now()
-            // 过滤过期的 idle 项目：超过 10 分钟未更新的非运行项目不再展示，
-            // 避免残留假数据（同时保证灯只反映近期 agy 活动）。
+            // 过滤过期的 idle 项目：避免残留假数据。
+            // - presetActive（agy 优先模式）：ok/idle 项目保留展示，常驻灯
+            //   反映最近活动（10 分钟 TTL）。
+            // - 非 presetActive（普通模式）：用户要求「调用 agy 时显示即可」——
+            //   灯只在运行/回退时出现；ok/failed 项目短暂保留 8 秒让用户
+            //   看到结果后消失，空闲时标题栏无灯。
+            const OK_HOLD_MS = presetActive ? 10 * 60 * 1000 : 8000
             const STALE_MS = 10 * 60 * 1000
             const list = Object.keys(projects)
               .map((k) => projects[k])
-              .filter((p) => p.running > 0 || p.fallbackActive || (now - (Number(p.updatedAt) || 0)) < STALE_MS)
+              .filter((p) => {
+                const age = now - (Number(p.updatedAt) || 0)
+                if (p.running > 0 || p.fallbackActive) return true
+                if (p.state === 'running') return true
+                if (p.state === 'ok' || p.state === 'failed') return age < OK_HOLD_MS
+                return age < STALE_MS
+              })
               .sort((a, b) => b.updatedAt - a.updatedAt)
             const running = list.reduce((n, p) => n + p.running, 0)
             const state = running > 0 ? 'running' : (list.some((p) => p.fallbackActive) ? 'fallback' : (list.length ? 'ok' : 'idle'))

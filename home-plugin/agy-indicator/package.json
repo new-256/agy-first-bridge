@@ -4,9 +4,9 @@
   "version": "1.5.4",
   "private": true,
   "type": "module",
-  "main": "./lib/index.mjs",
+  "main": "./lib/client-entry.mjs",
   "exports": {
-    ".": "./lib/index.mjs",
+    ".": "./lib/client-entry.mjs",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
