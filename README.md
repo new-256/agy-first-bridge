@@ -138,7 +138,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.5.2，Node ≥18）
+├─ package.json                 # 版本元数据（v1.5.3，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -163,7 +163,7 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.2）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.3）
    └─ en/                        # 英文文档
 ```
 
@@ -173,6 +173,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.5.3](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.3) | **修复动态灯读不到状态（永远显示占位灰点）**：`host.call` 返回 invoke 包装 `{ok, value}`，client 必须解包 `value` 才能拿到真实 snapshot；修复后动态灯显示真实状态（⟳ 工作中/✓ 成功），悬浮 tooltip 显示步骤轨迹 |
 | [v1.5.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.2) | **修复动态形态 agy_run 触发 Host guard 拒绝**：动态插件沙箱不暴露 `ctx.emit`，`dynamic/host.js` 的 `publish()` 改为 no-op（动态灯走 `agy_status` RPC，不推事件）；实测调用 agy_run 状态灯全链路正常（就绪→⟳ 工作中→✓ 成功） |
 | [v1.5.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.1) | **修复切换会话空白**：家级灯 client 半改用原生 setInterval/clearInterval（卸载不再可能抛错），Slot id 改为 `agy-indicator-home` 避免与动态插件撞 id |
 | [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | **状态灯随软件启动**：家级插件 `agy-indicator`（cordis.patch.yml 注册，所有会话自动显示、无需审批）；preset 每次状态变化推送事件到家级收集器 |

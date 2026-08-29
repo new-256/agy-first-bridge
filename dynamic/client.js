@@ -66,7 +66,15 @@ return {
       const setS = st[1]
       React.useEffect(function () {
         let alive = true
-        const tick = function () { host.call('agy_status').then(function (v) { if (alive) setS(v) }).catch(function () {}) }
+        const tick = function () {
+          host.call('agy_status').then(function (v) {
+            if (!alive) return
+            // host.call resolves to the invoke envelope { ok, value } (host-runner
+            // invoke()), not the raw handler result; unwrap it defensively.
+            const snap = v && typeof v === 'object' && v.ok === true && 'value' in v ? v.value : v
+            setS(snap)
+          }).catch(function () {})
+        }
         tick()
         const dispose = ctx.interval(tick, 1200)
         return function () { alive = false; dispose() }

@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.3] - 2026
+
+### Fixed
+- **动态灯读不到状态（永远显示占位灰点 + `agy[undefined]undefined`）**：Cordis 动态插件的 `host.call` 返回 host-runner 的 invoke 包装 `{ ok, value }`，而非 handler 的原始结果。`dynamic/client.js` 此前直接把包装对象当作 snapshot 使用，`s.state`/`s.projects` 恒为 undefined，灯永远渲染占位符。已改为**解包 `value`**（防御性：仅当 `v.ok === true && 'value' in v` 时解包，否则原样使用）。修复后动态灯显示真实状态：`⟳ 项目名`（工作中，品牌色脉冲）、`✓ 项目名`（成功，绿点）、`✗`/`↩`，悬浮 tooltip 显示当前步骤与最近轨迹。
+- 目视实测（真实 agy 调用）：标题栏灯 就绪 → `⟳ DSH` 脉冲 → `✓ DSH`（last=SUCCESS）。
+
 ## [1.5.2] - 2026
 
 ### Fixed
