@@ -155,6 +155,16 @@ async function firstOk(urls, token, payload) {
 
 function roundPct(f) { return typeof f === 'number' ? Math.round(f * 100) : null }
 
+// 模型家族识别：Claude / GPT 属于 3p 池子（Antigravity 上基本不可用，DSH 不应
+// 主动选择），Gemini 是主力可用池子，其余（tab_*、chat_* 等）归 other。
+function modelFamily(name) {
+  const n = String(name || '').toLowerCase()
+  if (n.includes('claude')) return 'claude'
+  if (n.includes('gpt')) return 'gpt'
+  if (n.includes('gemini')) return 'gemini'
+  return 'other'
+}
+
 async function main() {
   const summaryOnly = process.argv.includes('--summary')
   try {
@@ -173,7 +183,10 @@ async function main() {
     if (quotaResp && quotaResp.models && typeof quotaResp.models === 'object') {
       for (const [name, info] of Object.entries(quotaResp.models)) {
         const q = info && info.quotaInfo
-        if (q) models.push({ name, percentage: roundPct(q.remainingFraction), resetTime: q.resetTime || '', displayName: (info && info.displayName) || '' })
+        if (q) {
+          const family = modelFamily(name)
+          models.push({ name, percentage: roundPct(q.remainingFraction), resetTime: q.resetTime || '', displayName: (info && info.displayName) || '', family, recommended: family === 'gemini' || family === 'other' })
+        }
       }
       models.sort((a, b) => (b.percentage || 0) - (a.percentage || 0))
     }
@@ -192,7 +205,10 @@ async function main() {
     if (summaryOnly) {
       // 一行紧凑摘要
       const weekBuckets = groups.flatMap((g) => g.buckets.filter((b) => b.window === 'weekly').map((b) => ({ g: g.displayName, id: b.bucketId, pct: roundPct(b.remainingFraction), reset: b.resetTime })))
-      const modelSummary = models.slice(0, 4).map((m) => m.name.split('-').slice(0, 2).join('-') + ' ' + m.percentage + '%').join(', ')
+      // topModels 只列推荐模型（Gemini/other），Claude/GPT 3p 不推荐故不列出。
+      const recommended = models.filter((m) => m.recommended)
+      const pool = recommended.length ? recommended : models
+      const modelSummary = pool.slice(0, 4).map((m) => m.name.split('-').slice(0, 2).join('-') + ' ' + m.percentage + '%').join(', ')
       console.log(JSON.stringify({ ok: true, weekly: weekBuckets, topModels: modelSummary }))
     } else {
       console.log(JSON.stringify(out))

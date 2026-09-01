@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.10] - 2026
+
+### Added
+- **模型选择策略**：DSH 根据任务需求自行决定 agy 用哪个模型（model 参数）。
+  - gy_quota 输出每个模型的 amily（gemini/claude/gpt/other）与 ecommended（Claude/GPT 3p = false）；render 中 3p 标 [3p: Claude/GPT 不推荐]；--summary 的 topModels 只列推荐模型。
+  - policyText 新增 Model selection policy 段：优先 Gemini 池子 / 工具模型（recommended:true），**不要向 agy_run 传 Claude/GPT (3p) 模型**（本套餐上基本不可用）。
+  - **生图/图像编辑任务**：直接交给 agy_run 且**不指定 model**——agy 自行选择图像模型处理，不做过滤拦截。
+
+### Notes
+- 模型家族识别规则：name 含 claude → claude；含 gpt → gpt；含 gemini → gemini；其余 → other。
+- 实测：28 模型中推荐 25 个（Gemini 21 + 工具类 4），Claude 2 + GPT 1 标不推荐。
 ## [1.5.9] - 2026
 
 ### Added

@@ -36,7 +36,7 @@ import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.9'
+const VERSION = '1.5.10'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
@@ -360,7 +360,7 @@ const TOOLS = [
       properties: {
         prompt: { type: 'string', description: 'The full task/instruction for agy. Be complete and self-contained.' },
         mode: { type: 'string', enum: ['plan', 'accept-edits'], description: 'plan = no writes; accept-edits = allow edits (default).' },
-        model: { type: 'string', description: 'Optional agy model id.' },
+        model: { type: 'string', description: 'Optional agy model id — pick from the Gemini pool or utility models per the model-selection policy (use agy_quota to see the recommended:true list). Do NOT pass a Claude/GPT (3p) model.' },
         effort: { type: 'string', enum: ['low', 'medium', 'high'] },
         cwd: { type: 'string', description: 'Working directory for agy (default: AGY_MCP_CWD or the DSH workspace).' },
         addDirs: { type: 'array', items: { type: 'string' } },
@@ -394,7 +394,7 @@ const TOOLS = [
   },
   {
     name: 'agy_quota',
-    description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Returns models with percentage + groups with buckets (remainingFraction 0-1). Call before agy_run when quota may be low; weekly bucket below ~0.2 is low.',
+    description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Each model carries family (gemini/claude/gpt/other) and recommended (false for Claude/GPT 3p models — do not pass those to agy_run; they are effectively unusable). Call before agy_run when quota may be low; weekly bucket below ~0.2 is low.',
     inputSchema: { type: 'object', properties: { summary: { type: 'boolean', description: 'Return only a compact summary (weekly buckets + top models).' } } }
   }
 ]
@@ -443,7 +443,7 @@ async function callTool(name, args) {
         }
       }
       lines.push('models (pool %):')
-      for (const m of (res.models || []).slice(0, 10)) { lines.push('  ' + (m.displayName || m.name) + ' : ' + m.percentage + '%' + (m.resetTime ? ' (reset ' + m.resetTime + ')' : '')) }
+      for (const m of (res.models || []).slice(0, 10)) { lines.push('  ' + (m.displayName || m.name) + ' : ' + m.percentage + '%' + (m.recommended === false ? ' [3p: Claude/GPT 不推荐]' : '') + (m.resetTime ? ' (reset ' + m.resetTime + ')' : '')) }
     }
     return { content: [{ type: 'text', text: lines.join('\n') }] }
   }

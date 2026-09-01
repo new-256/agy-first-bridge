@@ -468,7 +468,7 @@ export function apply(ctx) {
       properties: {
         prompt: { type: 'string', description: 'The full task/instruction for agy. Be complete and self-contained.' },
         mode: { type: 'string', enum: ['auto', 'plan', 'accept-edits'], description: 'auto follows DSH plan state; plan = no writes; accept-edits = allow edits. Default auto.' },
-        model: { type: 'string', description: 'Optional agy model id (e.g. claude-opus-4-6-thinking, gemini-3.1-pro-high).' },
+        model: { type: 'string', description: 'Optional agy model id — pick from the Gemini pool or utility models per the model-selection policy (use agy_quota to see the recommended:true list). Do NOT pass a Claude/GPT (3p) model.' },
         effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort.' },
         cwd: { type: 'string', description: 'Working directory for agy. Defaults to the DSH workspace root.' },
         addDirs: { type: 'array', items: { type: 'string' }, description: 'Extra directories to add to agy workspace.' },
@@ -600,7 +600,7 @@ export function apply(ctx) {
       }
       if (Array.isArray(v.models) && v.models.length) {
         lines.push('models (pool %):')
-        for (const m of v.models.slice(0, 10)) { lines.push('  ' + (m.displayName || m.name) + ' : ' + m.percentage + '%' + (m.resetTime ? ' (reset ' + m.resetTime + ')' : '')) }
+        for (const m of v.models.slice(0, 10)) { lines.push('  ' + (m.displayName || m.name) + ' : ' + m.percentage + '%' + (m.recommended === false ? ' [3p: Claude/GPT 不推荐]' : '') + (m.resetTime ? ' (reset ' + m.resetTime + ')' : '')) }
         if (v.models.length > 10) lines.push('  … and ' + (v.models.length - 10) + ' more')
       }
       return [{ type: 'text', text: lines.join('\n') }]
@@ -636,7 +636,9 @@ export function apply(ctx) {
     '- When you delegate to a DSH subagent or workflow, instruct that delegate to also prefer agy_run.',
     '- For long-running tasks, call agy_run with background=true and collect the result with job_output; use agy_status to watch progress.',
     '',
-    'Fallback protocol: when agy is rate-limited or the network is down, agy_run/agy_continue automatically pop a confirmation dialog asking the user whether to use the DSH local API config. If the returned result has fallback=true (status FALLBACK_TO_DSH), the user chose to fall back: complete the task with native DSH tools / the local model and DO NOT call agy again for this task. If ok=false without fallback, report the agy error. Background failures do not open the dialog. Never loop agy calls; never ask agy to call back into DSH.'
+    'Fallback protocol: when agy is rate-limited or the network is down, agy_run/agy_continue automatically pop a confirmation dialog asking the user whether to use the DSH local API config. If the returned result has fallback=true (status FALLBACK_TO_DSH), the user chose to fall back: complete the task with native DSH tools / the local model and DO NOT call agy again for this task. If ok=false without fallback, report the agy error. Background failures do not open the dialog. Never loop agy calls; never ask agy to call back into DSH.',
+    '',
+    'Model selection policy (v1.5.10): you decide which model agy uses, based on the task at hand. Call agy_quota first to see the available pool and per-model remaining %. Use the Gemini pool (gemini-* models) or the other utility models (tab_*, chat_*) — the recommended:true entries. Do NOT pass a Claude or GPT model (family claude/gpt, marked [3p: 不推荐]) to agy_run: those 3p models are effectively unusable on this plan and will fail or produce poor results. When the task is image generation / image editing, dispatch it straight to agy_run WITHOUT specifying a model: agy itself selects the right image model and handles it; do not filter or block image tasks.'
   ].join('\n')
 
   ctx.effect(() => ctx.systemPrompt.section({ name: 'agy:policy', order: 5, text: policyText }))
