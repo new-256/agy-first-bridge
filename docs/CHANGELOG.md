@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.11] - 2026
+
+### Added
+- **5h 额度硬阻断（Quota guard）**：Gemini 5h 池子余量 <10% 时，agy_run / agy_continue **不调用 agy**，静默返回 QUOTA_BLOCKED（**无弹窗、不通知用户**），模型直接改用原生工具完成。
+  - preset / dynamic / MCP 三处统一实现；前台与后台都生效。
+  - 判定目标：Gemini 相关 5h 桶（bucketId 含 gemini 或组名含 Gemini），如 gemini-5h。
+  - 30 分钟缓存复用（与周额度预检一致）。
+- 周额度 <20% 仍为软提示（前台结果附 [quota]），不阻断。
+
+### Notes
+- 实测：当前 Gemini 5h = 98%，不触发阻断；逻辑验证：bucket 识别命中 gemini-5h，阈值 <0.10 判断正常。
 ## [1.5.10] - 2026
 
 ### Added

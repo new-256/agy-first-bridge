@@ -265,20 +265,31 @@ return {
       const cwd = resolveCwd(args)
       const built = buildArgv(exe, args, planActiveFor(exec))
 
-      // 额度预检（v1.5.9）：前台执行前快速查周套餐余量，过低时注入警告。
+      // 额度预检（v1.5.9 / v1.5.11）：
+      // - v1.5.11 硬阻断：Gemini 5h 池子余量 <10% → 不调用 agy，静默返回
+      //   QUOTA_BLOCKED（不弹窗、不通知用户），前台/后台都生效。
+      // - v1.5.9 软警告：周余量 <20% 时前台结果附 [quota] 提示。
       // cachedQuotaCheck 带 30 分钟缓存，预检失败静默（不阻塞调用）。
       let quotaWarning = ''
-      if (!args.background) {
-        try {
-          const q = await cachedQuotaCheck()
-          if (q && q.ok) {
+      try {
+        const q = await cachedQuotaCheck()
+        if (q && q.ok) {
+          // 5h 硬阻断：取 Gemini 相关 5h 桶（bucketId 含 gemini 或组名含 Gemini）。
+          const fiveHBuckets = (q.groups || []).flatMap(function (g) {
+            return (g.buckets || []).filter(function (b) { return b.window === '5h' && (String(b.bucketId || '').toLowerCase().indexOf('gemini') >= 0 || String(g.displayName || '').toLowerCase().indexOf('gemini') >= 0) }).map(function (b) { return { bucketId: b.bucketId, remainingFraction: b.remainingFraction, resetTime: b.resetTime } })
+          })
+          const low5h = fiveHBuckets.find(function (b) { return typeof b.remainingFraction === 'number' && b.remainingFraction < 0.10 })
+          if (low5h) {
+            return { ok: false, status: 'QUOTA_BLOCKED', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: 'agy blocked: Gemini 5h pool quota < 10% (' + Math.round(low5h.remainingFraction * 100) + '%, reset ' + (low5h.resetTime || '?') + '). Use native tools; do not call agy.' }
+          }
+          if (!args.background) {
             const low = (q.groups || []).flatMap(function (g) { return (g.buckets || []).filter(function (b) { return b.window === 'weekly' }) }).filter(function (b) { return typeof b.remainingFraction === 'number' && b.remainingFraction < 0.2 })
             if (low.length) {
               quotaWarning = '\n[quota] 周套餐余量低：' + low.map(function (b) { return (b.bucketId || '') + ' ' + Math.round(b.remainingFraction * 100) + '% (reset ' + (b.resetTime || '?') + ')' }).join('、') + ' —— 建议降低任务规模或用 agy_quota 确认。'
             }
           }
-        } catch (e) { /* ignore */ }
-      }
+        }
+      } catch (e) { /* ignore */ }
 
       if (!exeOk) {
         begin(cwd)
@@ -329,6 +340,7 @@ return {
       const v = value || {}
       if (v.background) return [{ type: 'text', text: 'agy dispatched in background (mode=' + v.mode + '). jobId=' + v.jobId + '. Collect with job_output.' }]
       if (v.fallback) return [{ type: 'text', text: 'agy 回退：用户选择使用 DSH 本地 API 配置（原因 ' + v.reason + '）。请改用原生工具/本地模型完成本任务，不要再调 agy。' }]
+      if (v.status === 'QUOTA_BLOCKED') return [{ type: 'text', text: 'agy 未调用（5h 池子额度 <10%）：' + (v.stderr || '') + ' —— 请直接用原生工具/本地模型完成本任务。' }]
       const head = 'agy ' + (v.ok ? 'OK' : 'FAILED') + ' [status=' + v.status + ' mode=' + v.mode + (v.conversationId ? ' conv=' + v.conversationId : '') + (v.totalTokens != null ? ' tokens=' + v.totalTokens : '') + (v.durationSeconds != null ? ' ' + v.durationSeconds + 's' : '') + ']'
       const body = v.response ? v.response : (v.stderr ? '[stderr] ' + v.stderr : (v.rawStdout ? '[raw] ' + v.rawStdout : ''))
       return [{ type: 'text', text: head + (body ? '\n\n' + body : '') }]
@@ -425,7 +437,9 @@ return {
       '',
       'Fallback protocol: when agy is rate-limited or the network is down, agy_run/agy_continue automatically pop a confirmation dialog asking the user whether to use the DSH local API config. If the returned result has fallback=true (status FALLBACK_TO_DSH), the user chose to fall back: complete the task with native DSH tools / the local model and DO NOT call agy again for this task. If ok=false without fallback, report the agy error. Never loop agy calls; never ask agy to call back into DSH.',
       '',
-      'Model selection policy (v1.5.10): you decide which model agy uses, based on the task at hand. Call agy_quota first to see the available pool and per-model remaining %. Use the Gemini pool (gemini-* models) or the other utility models (tab_*, chat_*) — the recommended:true entries. Do NOT pass a Claude or GPT model (family claude/gpt, marked [3p: 不推荐]) to agy_run: those 3p models are effectively unusable on this plan and will fail or produce poor results. When the task is image generation / image editing, dispatch it straight to agy_run WITHOUT specifying a model: agy itself selects the right image model and handles it; do not filter or block image tasks.'
+      'Model selection policy (v1.5.10): you decide which model agy uses, based on the task at hand. Call agy_quota first to see the available pool and per-model remaining %. Use the Gemini pool (gemini-* models) or the other utility models (tab_*, chat_*) — the recommended:true entries. Do NOT pass a Claude or GPT model (family claude/gpt, marked [3p: 不推荐]) to agy_run: those 3p models are effectively unusable on this plan and will fail or produce poor results. When the task is image generation / image editing, dispatch it straight to agy_run WITHOUT specifying a model: agy itself selects the right image model and handles it; do not filter or block image tasks.',
+      '',
+      'Quota guard (v1.5.11): if the Gemini 5h pool quota is below 10%, agy_run/agy_continue will SILENTLY refuse to call agy (status QUOTA_BLOCKED, no dialog, no user notification) — finish the task with native tools instead. A weekly quota below 20% is only a soft hint appended to the result; you may still call agy but prefer smaller tasks.'
     ].join('\n')
 
     ctx.systemPrompt.section({ name: 'agy:policy', order: 5, text: policyText })

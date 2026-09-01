@@ -36,7 +36,7 @@ import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.10'
+const VERSION = '1.5.11'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
@@ -457,10 +457,33 @@ async function callTool(name, args) {
   }
   const mapped = { ...a }
   if (name === 'agy_continue' && !mapped.conversationId && mapped.latest) mapped.continueLatest = true
+  // v1.5.11 5h 硬阻断：Gemini 5h 池子 <10% → 不调用 agy，静默返回（不通知用户）。
+  const block = await quotaBlock5h()
+  if (block) return { content: [{ type: 'text', text: block }] }
   const res = await runAgy(mapped)
   const out = textResult(res)
   if (!res.ok && !res.fallback) out.isError = false
   return out
+}
+
+// 5h 硬阻断（v1.5.11）：Gemini 5h 池子余量 <10% 时返回阻断文案，否则 null。
+// 带 30 分钟缓存（与 preset/dynamic 的 cachedQuotaCheck 一致；缓存额度数据本身，
+// 每次调用从中计算阻断，避免反复刷新 token）。
+let quotaBlockCache = { at: 0, data: null }
+async function quotaBlock5h() {
+  const now = Date.now()
+  let q = quotaBlockCache.data
+  if (!q || now - quotaBlockCache.at >= 30 * 60 * 1000) {
+    try { q = await execQuota() } catch (e) { q = null }
+    quotaBlockCache = { at: now, data: q }
+  }
+  if (!q || !q.ok) return null
+  const fiveH = (q.groups || []).flatMap((g) => (g.buckets || [])
+    .filter((b) => b.window === '5h' && (String(b.bucketId || '').toLowerCase().includes('gemini') || String(g.displayName || '').toLowerCase().includes('gemini')))
+    .map((b) => ({ bucketId: b.bucketId, remainingFraction: b.remainingFraction, resetTime: b.resetTime })))
+  const low5h = fiveH.find((b) => typeof b.remainingFraction === 'number' && b.remainingFraction < 0.10)
+  if (!low5h) return null
+  return 'agy 未调用（5h 池子额度 <10%）：Gemini 5h pool quota < 10% (' + Math.round(low5h.remainingFraction * 100) + '%, reset ' + (low5h.resetTime || '?') + '). Use native tools; do not call agy.'
 }
 
 // ── minimal JSON-RPC / MCP stdio plumbing ────────────────────────────────────
