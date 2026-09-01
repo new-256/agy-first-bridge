@@ -56,8 +56,12 @@ function parseStreamJson(stdoutText) {
 
 function buildResult(parsed, outcome, mode, stderrText, stdoutText) {
   const exitCode = outcome ? outcome.exitCode : null
-  if (parsed) return { ok: exitCode === 0 && parsed.status === 'SUCCESS', status: typeof parsed.status === 'string' ? parsed.status : (exitCode === 0 ? 'UNKNOWN' : 'ERROR'), response: typeof parsed.response === 'string' ? parsed.response : '', conversationId: typeof parsed.conversation_id === 'string' ? parsed.conversation_id : null, durationSeconds: typeof parsed.duration_seconds === 'number' ? parsed.duration_seconds : null, numTurns: typeof parsed.num_turns === 'number' ? parsed.num_turns : null, totalTokens: parsed.usage && typeof parsed.usage.total_tokens === 'number' ? parsed.usage.total_tokens : null, exitCode: exitCode, mode: mode, stderr: stderrText ? String(stderrText).slice(-2000) : '' }
-  return { ok: false, status: 'PARSE_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: exitCode, mode: mode, stderr: stderrText ? String(stderrText).slice(-2000) : '', rawStdout: String(stdoutText || '').slice(-2000) }
+  // agy 超时/错误时信息在 result.error 字段（如 "timeout waiting for response"），
+  // 必须并入 stderr 供 isLimited 归类（v1.5.8 修复：网络挂起不再静默 FAILED）。
+  const errText = parsed && typeof parsed.error === 'string' && parsed.error ? parsed.error : ''
+  const stderr = (stderrText ? String(stderrText).slice(-2000) : '') + (errText ? (stderrText ? ' ' : '') + errText : '')
+  if (parsed) return { ok: exitCode === 0 && parsed.status === 'SUCCESS', status: typeof parsed.status === 'string' ? parsed.status : (exitCode === 0 ? 'UNKNOWN' : 'ERROR'), response: typeof parsed.response === 'string' ? parsed.response : '', conversationId: typeof parsed.conversation_id === 'string' ? parsed.conversation_id : null, durationSeconds: typeof parsed.duration_seconds === 'number' ? parsed.duration_seconds : null, numTurns: typeof parsed.num_turns === 'number' ? parsed.num_turns : null, totalTokens: parsed.usage && typeof parsed.usage.total_tokens === 'number' ? parsed.usage.total_tokens : null, exitCode: exitCode, mode: mode, stderr: stderr }
+  return { ok: false, status: 'PARSE_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: exitCode, mode: mode, stderr: stderr, rawStdout: String(stdoutText || '').slice(-2000) }
 }
 
 function isLimited(res) { if (!res || res.ok) return false; if (res.status === 'SPAWN_ERROR' || res.status === 'AGY_UNAVAILABLE' || res.status === 'HUNG_TIMEOUT') return true; const hay = String(res.stderr || '') + ' ' + String(res.response || '') + ' ' + String(res.status || ''); return LIMIT_RE.test(hay) }

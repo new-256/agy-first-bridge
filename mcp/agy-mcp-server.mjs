@@ -36,7 +36,7 @@ import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.7'
+const VERSION = '1.5.8'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
@@ -194,6 +194,10 @@ function parseAgyJson(stdoutText) {
 
 function buildResult(parsed, outcome, mode, stderrText, stdoutText) {
   const exitCode = outcome ? outcome.exitCode : null
+  // agy 超时/错误时信息在 result.error 字段（如 "timeout waiting for response"），
+  // 必须并入 stderr 供 isLimited 归类（v1.5.8 修复：网络挂起不再静默 FAILED）。
+  const errText = parsed && typeof parsed.error === 'string' && parsed.error ? parsed.error : ''
+  const stderr = (stderrText ? String(stderrText).slice(-2000) : '') + (errText ? (stderrText ? ' ' : '') + errText : '')
   if (parsed) {
     return {
       ok: exitCode === 0 && parsed.status === 'SUCCESS',
@@ -205,13 +209,13 @@ function buildResult(parsed, outcome, mode, stderrText, stdoutText) {
       totalTokens: parsed.usage && typeof parsed.usage.total_tokens === 'number' ? parsed.usage.total_tokens : null,
       exitCode,
       mode,
-      stderr: stderrText ? String(stderrText).slice(-2000) : ''
+      stderr
     }
   }
   return {
     ok: false, status: 'PARSE_ERROR', response: '', conversationId: null,
     durationSeconds: null, numTurns: null, totalTokens: null, exitCode,
-    mode, stderr: stderrText ? String(stderrText).slice(-2000) : '',
+    mode, stderr,
     rawStdout: String(stdoutText || '').slice(-2000)
   }
 }

@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.8] - 2026
+
+### Fixed
+- **超时不再静默 FAILED**：实测发现 agy 超时时错误信息位于 result JSON 的 rror 字段（如 	imeout waiting for response），而非 stderr；此前 DSH 侧 isLimited 检测不到 → 网络挂起/超时只返回 FAILED 不弹回退窗。
+- 现在 uildResult 将 parsed.error 并入 stderr → 	imeout 词命中 LIMIT_RE → 正确触发回退弹窗（可选 DSH 本地 API 继续 / 重试 / 返回错误）。
+- 实测确认：agy 自身 --print-timeout 是有效的第一道防线（timeoutSec=10 + sleep 40 时 17s 退出，不无限等）；DSH 侧 	imeoutSec+60s 硬超时是第二道防线。
+- 同步至 preset / 动态形态 / MCP 三种实现。
 ## [1.5.7] - 2026
 
 ### Fixed / Added
