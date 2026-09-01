@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.7] - 2026
+
+### Fixed / Added
+- **防死等加固（工作探测）**：
+  - DSH 侧进程超时强制 terminate（	imeoutSec + 60s，绝不无限等）；超时时明确报 HUNG_TIMEOUT（区别于解析失败），并附**最后事件摘要**（最后步骤、最近轨迹、距上次活动秒数），便于区分"长任务正常"与"真卡死"。
+  - 实测确认：agy 在后台长命令（如 sleep 40s / build）期间**不产生 step_update 事件**，因此**不做"无事件即杀"的心跳**（会误杀长任务）；以进程超时为唯一防线，长任务请调大 	imeoutSec。
+  - HUNG_TIMEOUT 计入"受限"归类 → 触发回退弹窗（网络挂起场景）。
+- **错误归类增强**：LIMIT_RE 补充额度/认证词（quota|insufficient|credit|balance|exhausted|401|403|unauthorized|金额|余额|额度|认证），额度耗尽/认证失败快速识别并触发回退，不再静默。
+- **弹窗透明化**：家级详情弹窗显示每个运行项目"无活动 Ns"（>90s 琥珀色提示：长任务请耐心 / 疑似卡住可取消重试）。
+- 同步至 preset / 动态形态 / MCP 三种实现。
 ## [1.5.6] - 2026
 
 ### Added

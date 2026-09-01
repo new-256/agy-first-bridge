@@ -27,7 +27,9 @@ const CWD_FALLBACK = 'C:\\Users\\lcl\\Desktop\\DSH'
 const FALLBACK_LABEL = '使用 DSH 本地 API 配置（回退）'
 const RETRY_LABEL = '重试 agy 一次'
 const CANCEL_LABEL = '不回退（返回错误）'
-const LIMIT_RE = /rate.?limit|ratelimit|429|too many|quota|exceed|network|offline|ENETUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|timed out|unavailable|503|502|500|connection|proxy|socket|tls|ssl|dns|网络|超时|限流|流量|受限|配额|连接|断开/i
+// 网络/限流/额度耗尽/认证失败归类（v1.5.7 增强：补 quota/credit/balance/exhausted/401/403/unauthorized）。
+// 命中即视为"受限"，触发回退弹窗，避免 DSH 静默死等。
+const LIMIT_RE = /rate.?limit|ratelimit|429|too many|quota|insufficient|credit|balance|exhausted|exceed|network|offline|ENETUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|timed out|unavailable|503|502|500|401|403|unauthorized|invalid api|api key|connection|proxy|socket|tls|ssl|dns|网络|超时|限流|流量|受限|配额|金额|余额|额度|认证|连接|断开/i
 const MAX_TRAIL = 12
 const MAX_ARG_LEN = 120
 
@@ -58,7 +60,7 @@ function buildResult(parsed, outcome, mode, stderrText, stdoutText) {
   return { ok: false, status: 'PARSE_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: exitCode, mode: mode, stderr: stderrText ? String(stderrText).slice(-2000) : '', rawStdout: String(stdoutText || '').slice(-2000) }
 }
 
-function isLimited(res) { if (!res || res.ok) return false; if (res.status === 'SPAWN_ERROR' || res.status === 'AGY_UNAVAILABLE') return true; const hay = String(res.stderr || '') + ' ' + String(res.response || '') + ' ' + String(res.status || ''); return LIMIT_RE.test(hay) }
+function isLimited(res) { if (!res || res.ok) return false; if (res.status === 'SPAWN_ERROR' || res.status === 'AGY_UNAVAILABLE' || res.status === 'HUNG_TIMEOUT') return true; const hay = String(res.stderr || '') + ' ' + String(res.response || '') + ' ' + String(res.status || ''); return LIMIT_RE.test(hay) }
 
 function buildArgv(exe, args, planActive) {
   const argv = [exe, '-p', String(args.prompt), '--output-format', 'stream-json', '--dangerously-skip-permissions']
@@ -211,9 +213,26 @@ return {
       const spec = { argv, cwd, stdio, graceMs: 5000 }
       if (callerSignal) spec.signal = callerSignal
       const handle = subprocess.spawn(spec)
-      const disposeTimer = ctx.timeout(function () { try { handle.terminate() } catch (e) {} }, (timeoutSec + 60) * 1000)
+      // 超时强制 terminate（DSH 侧最终防线，绝不无限等）。
+      // terminate 时记录最后事件摘要，便于区分"长命令正常"vs"真卡死"。
+      let lastEventSummary = '(no events yet)'
+      let timedOut = false
+      const disposeTimer = ctx.timeout(function () {
+        timedOut = true
+        try {
+          const p = ensureProject(cwd)
+          lastEventSummary = (p.current ? ('last step ' + p.current.stepIndex + ' -> ' + p.current.tool) : '') +
+            ' | trail=' + (p.trail.length ? p.trail.slice(-2).map(function (e) { return '[' + e.state + ']' + e.tool }).join(',') : 'empty') +
+            ' | elapsed=' + Math.round((Date.now() - (p.updatedAt || Date.now())) / 1000) + 's since last activity'
+        } catch (e) {}
+        try { handle.terminate() } catch (e) {}
+      }, (timeoutSec + 60) * 1000)
       const disposeLive = startLiveParser(handle, cwd)
-      try { const outcome = await handle.done; const s = readStreams(handle); return { outcome, stdoutText: s.stdoutText, stderrText: s.stderrText } } finally { disposeLive(); disposeTimer() }
+      try {
+        const outcome = await handle.done
+        const s = readStreams(handle)
+        return { outcome, stdoutText: s.stdoutText, stderrText: s.stderrText, timedOut, lastEventSummary }
+      } finally { disposeLive(); disposeTimer() }
     }
 
     function fallbackResult(res, mode) { return { ok: false, fallback: true, status: 'FALLBACK_TO_DSH', response: '', conversationId: (res && res.conversationId) || null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: res ? res.exitCode : null, mode: mode, stderr: res ? res.stderr : '', reason: res ? res.status : 'unknown' } }
@@ -265,6 +284,12 @@ return {
         while (true) {
           attempt += 1
           const r = await runSync(built.argv, cwd, built.timeoutSec, exec ? exec.signal : undefined)
+          if (r.timedOut) {
+            // DSH 侧超时强制终止：明确报 HUNG_TIMEOUT（区别于解析失败），
+            // 附最后事件摘要供诊断；视为"受限"以触发回退弹窗（网络挂起场景）。
+            res = { ok: false, status: 'HUNG_TIMEOUT', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: r.outcome ? r.outcome.exitCode : null, mode: built.mode, stderr: 'agy did not finish within ' + built.timeoutSec + 's (DSH hard timeout). Last activity: ' + r.lastEventSummary + '. NOTE: if the task was a long-running script (build/test), raise timeoutSec; this was a hang guard, not necessarily a failure of agy.' }
+            break
+          }
           res = buildResult(parseStreamJson(r.stdoutText), r.outcome, built.mode, r.stderrText, r.stdoutText)
           if (res.ok || !isLimited(res) || attempt >= 2) break
           const decision = await askFallback(exec, res)

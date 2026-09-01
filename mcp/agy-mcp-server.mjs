@@ -36,17 +36,17 @@ import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.6'
+const VERSION = '1.5.7'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
 const CWD_FALLBACK = process.env.AGY_MCP_CWD || 'C:\\Users\\lcl\\Desktop\\DSH'
 
-const LIMIT_RE = /rate.?limit|ratelimit|429|too many|quota|exceed|network|offline|ENETUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|timed out|unavailable|503|502|500|connection|proxy|socket|tls|ssl|dns|网络|超时|限流|流量|受限|配额|连接|断开/i
+const LIMIT_RE = /rate.?limit|ratelimit|429|too many|quota|insufficient|credit|balance|exhausted|exceed|network|offline|ENETUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|timed out|unavailable|503|502|500|401|403|unauthorized|invalid api|api key|connection|proxy|socket|tls|ssl|dns|网络|超时|限流|流量|受限|配额|金额|余额|额度|认证|连接|断开/i
 
 function isLimited(res) {
   if (!res || res.ok) return false
-  if (res.status === 'SPAWN_ERROR' || res.status === 'AGY_UNAVAILABLE') return true
+  if (res.status === 'SPAWN_ERROR' || res.status === 'AGY_UNAVAILABLE' || res.status === 'HUNG_TIMEOUT') return true
   const hay = String(res.stderr || '') + ' ' + String(res.response || '') + ' ' + String(res.status || '')
   return LIMIT_RE.test(hay)
 }
@@ -286,8 +286,11 @@ function runAgy(args) {
       const outcome = { exitCode: killed ? 124 : code }
       const parsed = parseAgyJson(out)
       if (parsed) foldResult(parsed, cwd)
-      const res = buildResult(parsed, outcome, args.mode || 'accept-edits', err, out)
-      if (killed && !res.ok) res.stderr = (res.stderr ? res.stderr + ' ' : '') + '[killed by timeout guard]'
+      let res = buildResult(parsed, outcome, args.mode || 'accept-edits', err, out)
+      if (killed && !res.ok) {
+        res.status = 'HUNG_TIMEOUT'
+        res.stderr = (res.stderr ? res.stderr + ' ' : '') + '[killed by DSH timeout guard after ' + timeoutSec + 's; if this was a long-running script (build/test) raise timeoutSec]'
+      }
       resolve(res)
     })
   })

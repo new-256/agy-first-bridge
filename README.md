@@ -138,7 +138,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.5.6，Node ≥18）
+├─ package.json                 # 版本元数据（v1.5.7，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -164,7 +164,7 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.6）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.7）
    └─ en/                        # 英文文档
 ```
 
@@ -174,6 +174,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.5.7](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.7) | **防死等加固**：进程超时强制终止 + HUNG_TIMEOUT 明确报错（附最后事件摘要，区分长命令与真卡死）；额度/认证错误归类增强（quota/余额/额度/401/403）；弹窗显示"无活动 Ns"透明化 |
 | [v1.5.6](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.6) | **点击灯弹窗实时查看 agy 活动**：点状态灯弹出详情面板（当前步骤/工具参数/最近轨迹/上次状态），数据随 1.2s 轮询自动刷新，×/遮罩/Esc 关闭 |
 | [v1.5.5](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.5) | **辨识度优化**：running 圆点改用静态蓝（--dsw-static-blue-500 #3b82f6，原 brand-primary 解析为近黑）、ok 用 static-green-500；灯文字统一显示 AGY（非项目名），项目名/步骤进 tooltip |
 | [v1.5.4](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.4) | **全软件统一为一盏灯 + 模式感知显示**：动态形态不再自渲染灯，改经家级 `agyCollector` 服务把状态推入同一张表；preset 模式常驻（`presetActive`），普通模式仅调用 agy 时临时显示（ok 保留 8s 后隐藏）；**修复后端启动崩溃**（裸名行经 main 二次加载 index.mjs 导致 `agyCollector` 重复注册——新增 `lib/client-entry.mjs` 占位 + main 改向 + provide 防御） |

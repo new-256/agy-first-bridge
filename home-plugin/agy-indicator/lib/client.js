@@ -151,6 +151,8 @@ window.__ModuleLoader__.load({
                 return react.createElement("div", { key: "t" + j, className: "agy-pop-line agy-pop-mono" },
                   "[" + e.state + "] step " + e.stepIndex + " " + e.tool + (e.args ? " " + argText(e.args) : ""));
               })) : null,
+            (p.running > 0 && p.updatedAt) ? react.createElement("div", { className: "agy-pop-line", style: { marginTop: "6px", color: (Date.now() - p.updatedAt > 90000 ? "var(--dsw-alias-state-warn-primary)" : "var(--dsw-alias-label-secondary)") } },
+              "无活动 " + Math.max(0, Math.round((Date.now() - p.updatedAt) / 1000)) + "s" + (Date.now() - p.updatedAt > 90000 ? "（若长任务请耐心；若疑似卡住可取消重试）" : "")) : null,
             (p.lastStatus) ? react.createElement("div", { className: "agy-pop-line agy-pop-mono", style: { marginTop: "6px" } },
               "last=" + p.lastStatus + (p.lastConversationId ? " " + p.lastConversationId.slice(0, 8) : "")) : null));
         });
