@@ -125,7 +125,20 @@ window.__ModuleLoader__.load({
     function Popup(props) {
       const s = props.s;
       const onClose = props.onClose;
+      const quota = props.quota;
       const rows = [];
+      // 额度区（可选增强）：显示周套餐余量（来自 /agy-indicator/quota）。
+      if (quota && quota.ok && Array.isArray(quota.weekly) && quota.weekly.length) {
+        const low = quota.weekly.some(function (w) { return w.pct < 20; });
+        rows.push(react.createElement("div", { key: "quota", className: "agy-pop-proj", style: { background: "rgba(59,130,246,.06)", border: "1px solid rgba(59,130,246,.25)" } },
+          react.createElement("div", { className: "agy-pop-proj-head" }, "额度（套餐池子）"),
+          quota.weekly.map(function (w, i) {
+            return react.createElement("div", { key: "q" + i, className: "agy-pop-line agy-pop-mono", style: { color: (w.pct < 20 ? "var(--dsw-alias-state-warn-primary)" : undefined) } },
+              (w.id || w.g) + " 周余量 " + w.pct + "%" + (w.reset ? " (reset " + w.reset.slice(0, 16).replace("T", " ") + ")" : ""));
+          }),
+          low ? react.createElement("div", { className: "agy-pop-line", style: { marginTop: "4px", color: "var(--dsw-alias-state-warn-primary)" } },
+            "⚠ 周额度偏低：大任务请谨慎（可用 agy_quota 查看模型池子明细）") : null));
+      }
       if (s && Array.isArray(s.projects) && s.projects.length) {
         s.projects.forEach(function (p, i) {
           const head = (p.state === "running" ? "\u27F3 " : p.state === "ok" ? "\u2713 " : p.state === "failed" ? "\u2717 " : p.state === "fallback" ? "\u21A9 " : "") + (p.name || p.cwd);
@@ -177,6 +190,27 @@ window.__ModuleLoader__.load({
       const ot = react.useState(false);
       const open = ot[0];
       const setOpen = ot[1];
+      const qt = react.useState(null);
+      const quota = qt[0];
+      const setQuota = qt[1];
+      // 弹窗打开时拉一次额度（带模块级 5 分钟缓存，避免每次打开都跑脚本）。
+      react.useEffect(function () {
+        if (!open) return;
+        let alive = true;
+        if (Indicator._quotaCache && Date.now() - Indicator._quotaCache.at < 5 * 60 * 1000) {
+          setQuota(Indicator._quotaCache.data);
+        } else {
+          fetch("/agy-indicator/quota", { cache: "no-store" })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (v) {
+              if (!alive) return;
+              Indicator._quotaCache = { at: Date.now(), data: v };
+              setQuota(v);
+            })
+            .catch(function () { /* 静默 */ });
+        }
+        return function () { alive = false; };
+      }, [open]);
       react.useEffect(function () {
         let alive = true;
         let timerId = null;
@@ -233,7 +267,7 @@ window.__ModuleLoader__.load({
       if (!open) return light;
       return react.createElement(react.Fragment, null,
         light,
-        react.createElement(Popup, { s: s, onClose: function () { setOpen(false); } }));
+        react.createElement(Popup, { s: s, quota: quota, onClose: function () { setOpen(false); } }));
     }
 
     function apply(ctx) {

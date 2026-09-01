@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.9] - 2026
+
+### Added
+- **Google AI 套餐池子额度查询**（参考开源项目 [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) 的方法，已实测打通）：
+  - 新增独立脚本 in/agy-quota.mjs：读 Windows 凭据管理器 gemini:antigravity（agy OAuth 登录时写入）→ 用 Antigravity 公开 OAuth client 刷新 access_token → 调 Google Cloud Code API：
+    - etchAvailableModels：每模型池子剩余百分比（remainingFraction → %）；
+    - etrieveUserQuotaSummary：分组套餐余量（weekly 周窗口 + 5h 快窗口）。
+  - 新增工具 **gy_quota**（preset / 动态形态 / MCP 三处实现）：返回 { ok, models[], groups[], tier }；--summary 返回紧凑摘要。
+  - **家级灯**：弹窗顶部显示周套餐余量（/agy-indicator/quota 路由，5 分钟缓存）；周额度 <20% 琥珀色警告。
+  - **谨慎调用**：前台 gy_run 前 30 分钟缓存预检周余量，<20% 时在结果附 [quota] 警告（建议降低规模或先查 agy_quota）。
+- 凭据读取用 csc.exe 现编译最小 C# 程序（规避本机 Add-Type 因 LIB 自引用失效的问题），编译产物缓存于 %TEMP%。
+
+### Notes
+- 实测本机数据：Gemini 周额度 27%（reset 09/03）、Claude/GPT 周 100%；每模型池子 98-100%。
+- 动态形态的 agy_quota 随下次插件重定义生效（本次会话的旧动态插件不含该工具）。
 ## [1.5.8] - 2026
 
 ### Fixed

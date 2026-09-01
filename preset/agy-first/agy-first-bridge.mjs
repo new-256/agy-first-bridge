@@ -358,6 +358,21 @@ export function apply(ctx) {
     const cwd = resolveCwd(args)
     const built = buildArgv(exe, args, planActiveFor(exec))
 
+    // 额度预检（v1.5.9）：执行前快速查周套餐余量，过低时在结果里附警告。
+    // 带 30 分钟缓存，避免每次调用都刷新 token / 请求 API。
+    let quotaWarning = ''
+    if (!args.background) {
+      try {
+        const q = await cachedQuotaCheck()
+        if (q && q.ok) {
+          const low = (q.groups || []).flatMap((g) => (g.buckets || []).filter((b) => b.window === 'weekly')).filter((b) => typeof b.remainingFraction === 'number' && b.remainingFraction < 0.2)
+          if (low.length) {
+            quotaWarning = '\n[quota] 周套餐余量低：' + low.map((b) => (b.bucketId || '') + ' ' + Math.round(b.remainingFraction * 100) + '% (reset ' + (b.resetTime || '?') + ')').join('、') + ' —— 建议降低任务规模或用 agy_quota 确认。'
+          }
+        }
+      } catch (e) { /* 预检失败不阻塞 */ }
+    }
+
     if (!exeOk) {
       begin(cwd)
       let res = { ok: false, status: 'AGY_UNAVAILABLE', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: 'agy executable not found: ' + resolveErr }
@@ -419,6 +434,7 @@ export function apply(ctx) {
       if (!res.ok && !res.fallback && isLimited(res) && attempt >= 2) {
         if (await askFallback(exec, res) === 'fallback') res = fallbackResult(res, built.mode)
       }
+      if (quotaWarning && res.ok) res.response = String(res.response || '') + quotaWarning
       end(res, cwd)
       return res
     } catch (e) {
@@ -538,9 +554,74 @@ export function apply(ctx) {
     }
   }
 
+  // agy_quota：查询 agy 所用 Google AI 套餐（Antigravity OAuth）的池子额度。
+  // 复用独立脚本 bin/agy-quota.mjs（凭据→刷新 token→fetchAvailableModels +
+  // retrieveUserQuotaSummary），stdout 输出 JSON。脚本路径：相对本模块向上两级的 bin。
+  let quotaCache = { at: 0, data: null }
+  async function cachedQuotaCheck() {
+    const now = Date.now()
+    if (quotaCache.data && now - quotaCache.at < 30 * 60 * 1000) return quotaCache.data
+    const res = await execQuotaScript()
+    quotaCache = { at: now, data: res }
+    return res
+  }
+
+  async function execQuotaScript() {
+    const scriptPath = new URL('../../bin/agy-quota.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+    const node = process.execPath || 'node'
+    const handle = subprocess.spawn({ argv: [node, scriptPath], cwd: CWD_FALLBACK, stdio, graceMs: 5000 })
+    const outcome = await handle.done
+    const s = readStreams(handle)
+    const stdoutText = s.stdoutText || ''
+    const jsonMatch = stdoutText.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return { ok: false, error: 'no JSON output: ' + stdoutText.slice(0, 300) }
+    try {
+      const parsed = JSON.parse(jsonMatch[0])
+      return parsed
+    } catch (e) { return { ok: false, error: 'parse error: ' + e.message } }
+  }
+
+  const quotaTool = {
+    name: 'agy_quota',
+    description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Returns { ok, models: [{name, percentage, resetTime, displayName}], groups: [{displayName, buckets: [{bucketId, window, remainingFraction, resetTime}]}], tier }. Call this BEFORE agy_run when you want to confirm there is quota left (e.g. weekly Gemini bucket below ~20% is low; avoid heavy runs then). If the credential is missing the tool returns { ok:false, error } and agy_run still works normally.',
+    parameters: { type: 'object', additionalProperties: false, required: [], properties: { summary: { type: 'boolean', description: 'Return only a compact summary line (weekly buckets + top models).' } } },
+    output: { schema: OUTPUT_SCHEMA, render: function renderQuota(args, value) {
+      const v = value || {}
+      if (!v.ok) return [{ type: 'text', text: 'agy_quota failed: ' + String(v.error || 'unknown') }]
+      const lines = []
+      lines.push('agy quota [tier=' + (v.tier || '?') + ']')
+      if (Array.isArray(v.groups)) {
+        for (const g of v.groups) {
+          for (const b of (g.buckets || [])) {
+            const pct = typeof b.remainingFraction === 'number' ? Math.round(b.remainingFraction * 100) : '?'
+            lines.push('· ' + (b.bucketId || g.displayName || '') + ' [' + (b.window || '') + '] ' + pct + '%' + (b.resetTime ? ' reset=' + b.resetTime : ''))
+          }
+        }
+      }
+      if (Array.isArray(v.models) && v.models.length) {
+        lines.push('models (pool %):')
+        for (const m of v.models.slice(0, 10)) { lines.push('  ' + (m.displayName || m.name) + ' : ' + m.percentage + '%' + (m.resetTime ? ' (reset ' + m.resetTime + ')' : '')) }
+        if (v.models.length > 10) lines.push('  … and ' + (v.models.length - 10) + ' more')
+      }
+      return [{ type: 'text', text: lines.join('\n') }]
+    } },
+    async execute(args) {
+      const a = args || {}
+      const res = await execQuotaScript()
+      if (res.ok && a.summary) {
+        // 紧凑摘要
+        const weekly = (res.groups || []).flatMap((g) => (g.buckets || []).filter((b) => b.window === 'weekly').map((b) => ({ g: g.displayName, id: b.bucketId, pct: Math.round((b.remainingFraction || 0) * 100), reset: b.resetTime })))
+        const top = (res.models || []).slice(0, 4).map((m) => (m.displayName || m.name) + ' ' + m.percentage + '%').join(', ')
+        return { ok: true, summary: { weekly, topModels: top }, models: res.models, groups: res.groups, tier: res.tier }
+      }
+      return res
+    }
+  }
+
   ctx.effect(() => ctx.tools.register(runTool))
   ctx.effect(() => ctx.tools.register(continueTool))
   ctx.effect(() => ctx.tools.register(statusTool))
+  ctx.effect(() => ctx.tools.register(quotaTool))
 
   const policyText = [
     'agy-first execution policy (local agy CLI bridge).',

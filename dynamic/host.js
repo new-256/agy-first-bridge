@@ -24,6 +24,9 @@
 //     NOT ctx.tools.register (that plain-object form is only for the preset).
 
 const CWD_FALLBACK = 'C:\\Users\\lcl\\Desktop\\DSH'
+// agy_quota 独立脚本的绝对路径（dynamic 沙箱无 import.meta/process，用固定路径）。
+const QUOTA_SCRIPT = 'C:\\Users\\lcl\\Desktop\\agy-first-bridge\\bin\\agy-quota.mjs'
+const QUOTA_NODE = 'node'
 const FALLBACK_LABEL = '使用 DSH 本地 API 配置（回退）'
 const RETRY_LABEL = '重试 agy 一次'
 const CANCEL_LABEL = '不回退（返回错误）'
@@ -262,6 +265,21 @@ return {
       const cwd = resolveCwd(args)
       const built = buildArgv(exe, args, planActiveFor(exec))
 
+      // 额度预检（v1.5.9）：前台执行前快速查周套餐余量，过低时注入警告。
+      // cachedQuotaCheck 带 30 分钟缓存，预检失败静默（不阻塞调用）。
+      let quotaWarning = ''
+      if (!args.background) {
+        try {
+          const q = await cachedQuotaCheck()
+          if (q && q.ok) {
+            const low = (q.groups || []).flatMap(function (g) { return (g.buckets || []).filter(function (b) { return b.window === 'weekly' }) }).filter(function (b) { return typeof b.remainingFraction === 'number' && b.remainingFraction < 0.2 })
+            if (low.length) {
+              quotaWarning = '\n[quota] 周套餐余量低：' + low.map(function (b) { return (b.bucketId || '') + ' ' + Math.round(b.remainingFraction * 100) + '% (reset ' + (b.resetTime || '?') + ')' }).join('、') + ' —— 建议降低任务规模或用 agy_quota 确认。'
+            }
+          }
+        } catch (e) { /* ignore */ }
+      }
+
       if (!exeOk) {
         begin(cwd)
         let res = { ok: false, status: 'AGY_UNAVAILABLE', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: 'agy executable not found: ' + resolveErr }
@@ -302,6 +320,7 @@ return {
           break
         }
         if (!res.ok && !res.fallback && isLimited(res) && attempt >= 2) { if (await askFallback(exec, res) === 'fallback') res = fallbackResult(res, built.mode) }
+        if (quotaWarning && res.ok) res.response = String(res.response || '') + quotaWarning
         end(res, cwd); return res
       } catch (e) { const res = { ok: false, status: 'SPAWN_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: String(e && e.message || e) }; const out = (await askFallback(exec, res) === 'fallback') ? fallbackResult(res, built.mode) : res; end(out, cwd); return out }
     }
@@ -342,6 +361,45 @@ return {
       return [{ type: 'text', text: lines.join('\n') }]
     }
 
+    // agy_quota：查询 agy 所用 Google AI 套餐池子额度。跑独立脚本 bin/agy-quota.mjs，
+    // stdout JSON。带 30 分钟缓存（每次 agy_run 前预检复用）。
+    let quotaCache = { at: 0, data: null }
+    async function cachedQuotaCheck() {
+      const now = Date.now()
+      if (quotaCache.data && now - quotaCache.at < 30 * 60 * 1000) return quotaCache.data
+      let res
+      try {
+        const handle = subprocess.spawn({ argv: [QUOTA_NODE, QUOTA_SCRIPT], cwd: CWD_FALLBACK, stdio, graceMs: 5000 })
+        const outcome = await handle.done
+        const s = readStreams(handle)
+        const m = String(s.stdoutText || '').match(/\{[\s\S]*\}/)
+        res = m ? JSON.parse(m[0]) : { ok: false, error: 'no JSON output: ' + String(s.stdoutText || '').slice(0, 300) }
+      } catch (e) { res = { ok: false, error: String(e && e.message || e) } }
+      quotaCache = { at: now, data: res }
+      return res
+    }
+
+    function renderQuota(args, value) {
+      const v = value || {}
+      if (!v.ok) return [{ type: 'text', text: 'agy_quota failed: ' + String(v.error || 'unknown') }]
+      const lines = ['agy quota [tier=' + (v.tier || '?') + ']']
+      if (Array.isArray(v.groups)) {
+        for (const g of v.groups) {
+          for (const b of (g.buckets || [])) {
+            const pct = typeof b.remainingFraction === 'number' ? Math.round(b.remainingFraction * 100) : '?'
+            lines.push('· ' + (b.bucketId || g.displayName || '') + ' [' + (b.window || '') + '] ' + pct + '%' + (b.resetTime ? ' reset=' + b.resetTime : ''))
+          }
+        }
+      }
+      if (Array.isArray(v.models) && v.models.length) {
+        lines.push('models (pool %):')
+        for (const m of v.models.slice(0, 10)) { lines.push('  ' + (m.displayName || m.name) + ' : ' + m.percentage + '%' + (m.resetTime ? ' (reset ' + m.resetTime + ')' : '')) }
+        if (v.models.length > 10) lines.push('  … and ' + (v.models.length - 10) + ' more')
+      }
+      return [{ type: 'text', text: lines.join('\n') }]
+    }
+
+    const QUOTA_OUT = { schema: { type: 'object', additionalProperties: true }, render: renderQuota }
     const OUT = { schema: { type: 'object', additionalProperties: true }, render: renderResult }
     const STATUS_OUT = { schema: { type: 'object', additionalProperties: true }, render: renderStatus }
 
@@ -350,6 +408,8 @@ return {
     harness.registerTool(ctx, harness.defineTool({ name: 'agy_continue', description: 'Continue an existing agy conversation with a follow-up prompt. Pass conversationId or set latest=true. Same DSH-controlled, no-prompt execution and same fallback dialog as agy_run.', parameters: { prompt: { type: 'string', description: 'Follow-up instruction for the ongoing agy conversation.', required: true }, conversationId: { type: 'string', description: 'agy conversation id to resume.' }, latest: { type: 'boolean', description: 'Continue the most recent agy conversation.' }, mode: { type: 'string', enum: ['auto', 'plan', 'accept-edits'], description: 'Execution mode.' }, model: { type: 'string', description: 'Optional agy model id.' }, effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort.' }, cwd: { type: 'string', description: 'Working directory for agy.' }, timeoutSec: { type: 'integer', description: 'Print timeout seconds (10-3600, default 300).' }, background: { type: 'boolean', description: 'Run as a background job and return a jobId.' } }, output: OUT, execute: function (args, exec) { const a = args || {}; const mapped = { prompt: a.prompt, mode: a.mode, model: a.model, effort: a.effort, cwd: a.cwd, timeoutSec: a.timeoutSec, background: a.background }; if (a.conversationId) mapped.conversationId = a.conversationId; else if (a.latest) mapped.continueLatest = true; return coreExecute(mapped, exec) } }))
 
     harness.registerTool(ctx, harness.defineTool({ name: 'agy_status', description: 'Read a live snapshot of what the local agy agent is currently doing. Returns one section per project (working directory): running count, current step (tool name + arguments being executed, or agent_response thinking/typing), recent step trail, last completed run status + conversation id. Call this to check on an in-flight agy_run/agy_continue without waiting for it to finish.', parameters: { cwd: { type: 'string', description: 'Optional: filter the snapshot to a single project (working directory).' } }, output: STATUS_OUT, execute: function (args) { const a = args || {}; const snap = snapshot(); if (a.cwd) { const key = String(a.cwd); snap.projects = snap.projects.filter(function (p) { return p.cwd === key }); const g = snap.projects[0]; if (g) { snap.state = g.state; snap.running = g.running; snap.current = g.current; snap.trail = g.trail; snap.lastStatus = g.lastStatus; snap.lastAt = g.lastAt; snap.lastConversationId = g.lastConversationId; snap.fallbackActive = g.fallbackActive; snap.updatedAt = g.updatedAt } } return snap } }))
+
+    harness.registerTool(ctx, harness.defineTool({ name: 'agy_quota', description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Returns { ok, models: [{name, percentage, resetTime, displayName}], groups: [{displayName, buckets: [{bucketId, window, remainingFraction, resetTime}]}], tier }. Call this BEFORE agy_run when you want to confirm there is quota left (e.g. weekly Gemini bucket below ~20% is low; avoid heavy runs then). If the credential is missing the tool returns { ok:false, error } and agy_run still works normally.', parameters: { summary: { type: 'boolean', description: 'Return only a compact summary (weekly buckets + top models).' } }, output: QUOTA_OUT, execute: async function (args) { const a = args || {}; const res = await cachedQuotaCheck(); if (res.ok && a.summary) { const weekly = (res.groups || []).flatMap(function (g) { return (g.buckets || []).filter(function (b) { return b.window === 'weekly' }).map(function (b) { return { g: g.displayName, id: b.bucketId, pct: Math.round((b.remainingFraction || 0) * 100), reset: b.resetTime } }) }); const top = (res.models || []).slice(0, 4).map(function (m) { return (m.displayName || m.name) + ' ' + m.percentage + '%' }).join(', '); return { ok: true, summary: { weekly: weekly, topModels: top }, models: res.models, groups: res.groups, tier: res.tier } } return res } }))
 
     const policyText = [
       'agy-first execution policy (local agy CLI bridge, with fallback + live indicator + live status tool).',

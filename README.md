@@ -138,7 +138,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.5.8，Node ≥18）
+├─ package.json                 # 版本元数据（v1.5.9，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -164,7 +164,7 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.8）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.9）
    └─ en/                        # 英文文档
 ```
 
@@ -174,6 +174,7 @@ agy-first-bridge/
 
 | 版本 | 内容 |
 | --- | --- |
+| [v1.5.9](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.9) | **Google AI 套餐池子额度查询**：新工具 agy_quota（读 Windows 凭据 → 刷新 OAuth token → fetchAvailableModels/retrieveUserQuotaSummary）；家级弹窗显示周套餐余量；周额度<20% 时 agy_run 附谨慎提示 |
 | [v1.5.8](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.8) | **修复超时误判**：agy 超时错误在 result.error 字段（"timeout waiting for response"），现并入 stderr 归类 → 网络挂起正确触发回退弹窗（此前静默 FAILED） |
 | [v1.5.7](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.7) | **防死等加固**：进程超时强制终止 + HUNG_TIMEOUT 明确报错（附最后事件摘要，区分长命令与真卡死）；额度/认证错误归类增强（quota/余额/额度/401/403）；弹窗显示"无活动 Ns"透明化 |
 | [v1.5.6](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.6) | **点击灯弹窗实时查看 agy 活动**：点状态灯弹出详情面板（当前步骤/工具参数/最近轨迹/上次状态），数据随 1.2s 轮询自动刷新，×/遮罩/Esc 关闭 |

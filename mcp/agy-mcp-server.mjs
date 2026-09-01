@@ -36,7 +36,7 @@ import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.8'
+const VERSION = '1.5.9'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
@@ -391,10 +391,62 @@ const TOOLS = [
     name: 'agy_status',
     description: 'Read a live snapshot of what the local agy agent is currently doing. Returns one section per project (working directory): running count, the current step (tool name + arguments being executed, or agent_response thinking/typing), the recent step trail (tools executed, done/error), and the last completed run status + conversation id. Optional cwd filters to a single project. Call this to check on an in-flight agy_run/agy_continue without waiting for it to finish.',
     inputSchema: { type: 'object', properties: { cwd: { type: 'string', description: 'Optional: filter the snapshot to a single project (working directory).' } } }
+  },
+  {
+    name: 'agy_quota',
+    description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Returns models with percentage + groups with buckets (remainingFraction 0-1). Call before agy_run when quota may be low; weekly bucket below ~0.2 is low.',
+    inputSchema: { type: 'object', properties: { summary: { type: 'boolean', description: 'Return only a compact summary (weekly buckets + top models).' } } }
   }
 ]
 
+// 执行独立额度脚本 bin/agy-quota.mjs（凭据→刷新 token→fetchAvailableModels +
+// retrieveUserQuotaSummary），stdout JSON。无 30 分钟缓存问题（MCP 每次调用实查，
+// 成本可接受；如需缓存可后续加）。
+function execQuota() {
+  return new Promise((resolve) => {
+    const scriptPath = new URL('../bin/agy-quota.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+    const node = process.execPath || 'node'
+    let out = ''
+    let err = ''
+    let child
+    try {
+      child = spawn(node, [scriptPath], { cwd: CWD_FALLBACK, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    } catch (e) {
+      resolve({ ok: false, error: String(e && e.message || e) })
+      return
+    }
+    const timer = setTimeout(() => { try { child.kill() } catch {} }, 60000)
+    child.stdout.on('data', (d) => { out += d })
+    child.stderr.on('data', (d) => { err += d })
+    child.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, error: 'spawn: ' + String(e && e.message || e) }) })
+    child.on('close', () => {
+      clearTimeout(timer)
+      const m = out.match(/\{[\s\S]*\}/)
+      if (!m) { resolve({ ok: false, error: 'no JSON output: ' + (out + ' ' + err).slice(0, 300) }); return }
+      try { resolve(JSON.parse(m[0])) } catch (e) { resolve({ ok: false, error: 'parse: ' + e.message }) }
+    })
+  })
+}
+
 async function callTool(name, args) {
+  if (name === 'agy_quota') {
+    const res = await execQuota()
+    const lines = []
+    if (!res.ok) {
+      lines.push('agy_quota failed: ' + String(res.error || 'unknown'))
+    } else {
+      lines.push('agy quota [tier=' + (res.tier || '?') + ']')
+      for (const g of (res.groups || [])) {
+        for (const b of (g.buckets || [])) {
+          const pct = typeof b.remainingFraction === 'number' ? Math.round(b.remainingFraction * 100) : '?'
+          lines.push('· ' + (b.bucketId || g.displayName || '') + ' [' + (b.window || '') + '] ' + pct + '%' + (b.resetTime ? ' reset=' + b.resetTime : ''))
+        }
+      }
+      lines.push('models (pool %):')
+      for (const m of (res.models || []).slice(0, 10)) { lines.push('  ' + (m.displayName || m.name) + ' : ' + m.percentage + '%' + (m.resetTime ? ' (reset ' + m.resetTime + ')' : '')) }
+    }
+    return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
   if (name === 'agy_status') {
     const a = args || {}
     return { content: [{ type: 'text', text: statusText(a.cwd) }] }

@@ -24,6 +24,58 @@
 export const name = 'agy-indicator'
 export const inject = []
 export function apply(ctx) {
+  // 池子额度（Google AI 套餐）查询：可选增强。
+  // 若仓库脚本 bin/agy-quota.mjs 存在（AGY_QUOTA_SCRIPT 或默认路径），
+  // GET /agy-indicator/quota 返回额度快照；否则返回 { ok:false }。
+  // 独立于主状态路由，失败不影响灯本身。
+  let quotaCache = { at: 0, data: null }
+  const QUOTA_CACHE_MS = 5 * 60 * 1000
+  const QUOTA_DEFAULT_SCRIPT = 'C:\\Users\\lcl\\Desktop\\agy-first-bridge\\bin\\agy-quota.mjs'
+  const quotaScriptPath = process.env.AGY_QUOTA_SCRIPT || QUOTA_DEFAULT_SCRIPT
+  ;(async () => {
+    try {
+      const { execFile } = await import('node:child_process')
+      async function fetchQuota() {
+        const now = Date.now()
+        if (quotaCache.data && now - quotaCache.at < QUOTA_CACHE_MS) return quotaCache.data
+        return new Promise((resolve) => {
+          execFile('node', [quotaScriptPath, '--summary'], { timeout: 60000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+            let res
+            if (err) { res = { ok: false, error: String(err.message || err) } }
+            else {
+              const m = String(stdout || '').match(/\{[\s\S]*\}/)
+              res = m ? JSON.parse(m[0]) : { ok: false, error: 'no JSON' }
+            }
+            quotaCache = { at: Date.now(), data: res }
+            resolve(res)
+          })
+        })
+      }
+      if (typeof ctx.inject === 'function') {
+        ctx.inject(['webServer'], (webCtx) => {
+          const ws = webCtx.get('webServer')
+          if (!ws || typeof ws.register !== 'function') return
+          webCtx.effect(() => ws.register({
+            kind: 'exact',
+            path: '/agy-indicator/quota',
+            handler: async (req, res) => {
+              try {
+                const q = await fetchQuota()
+                res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+                res.end(JSON.stringify(q))
+              } catch (e) {
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: String(e && e.message || e) }))
+              }
+            }
+          }), 'agy-indicator: quota route')
+        })
+      }
+    } catch (e) {
+      // child_process 不可用：跳过额度路由（家级灯仍正常工作）
+    }
+  })()
+
   // cwd -> project record（全局视角：项目按工作目录唯一）
   const projects = Object.create(null)
   const MAX_PROJECTS = 24
