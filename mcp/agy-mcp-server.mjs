@@ -34,9 +34,11 @@
 
 import { spawn } from 'node:child_process'
 import { resolve as resolvePath } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.11'
+const VERSION = '1.5.12'
 const PROTOCOL = '2024-11-05'
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
@@ -402,9 +404,19 @@ const TOOLS = [
 // 执行独立额度脚本 bin/agy-quota.mjs（凭据→刷新 token→fetchAvailableModels +
 // retrieveUserQuotaSummary），stdout JSON。无 30 分钟缓存问题（MCP 每次调用实查，
 // 成本可接受；如需缓存可后续加）。
+function quotaScriptPath() {
+  // fileURLToPath 而非 .pathname：路径含空格（"DSH Desktop"）时 .pathname
+  // 会给出百分号编码（%20），且盘符正则只剥前导斜杠、保留 %20，导致脚本
+  // 永远打不开 → agy_quota 恒报 no JSON output。
+  const primary = fileURLToPath(new URL('../bin/agy-quota.mjs', import.meta.url))
+  if (existsSync(primary)) return primary
+  const fallback = 'C:\\Users\\lcl\\Desktop\\agy-first-bridge\\bin\\agy-quota.mjs'
+  if (existsSync(fallback)) return fallback
+  return primary // 不存在也返回，让 spawn 报真实错误
+}
 function execQuota() {
   return new Promise((resolve) => {
-    const scriptPath = new URL('../bin/agy-quota.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+    const scriptPath = quotaScriptPath()
     const node = process.execPath || 'node'
     let out = ''
     let err = ''
@@ -419,10 +431,10 @@ function execQuota() {
     child.stdout.on('data', (d) => { out += d })
     child.stderr.on('data', (d) => { err += d })
     child.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, error: 'spawn: ' + String(e && e.message || e) }) })
-    child.on('close', () => {
+    child.on('close', (code) => {
       clearTimeout(timer)
       const m = out.match(/\{[\s\S]*\}/)
-      if (!m) { resolve({ ok: false, error: 'no JSON output: ' + (out + ' ' + err).slice(0, 300) }); return }
+      if (!m) { resolve({ ok: false, error: 'no JSON output (exit=' + code + '): ' + (out + ' ' + err).slice(0, 300) }); return }
       try { resolve(JSON.parse(m[0])) } catch (e) { resolve({ ok: false, error: 'parse: ' + e.message }) }
     })
   })

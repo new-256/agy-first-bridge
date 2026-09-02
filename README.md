@@ -138,7 +138,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.5.11，Node ≥18）
+├─ package.json                 # 版本元数据（v1.5.12，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -164,33 +164,34 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.11）
+   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.12）
    └─ en/                        # 英文文档
 ```
 
 ## 版本与发布
 
-版本管理遵循语义化版本（`package.json` + Git tag + GitHub Release）：
+版本管理遵循语义化版本（`package.json` + Git tag + GitHub Release）。每版标注**实测适配的 DSH 版本**：
 
-| 版本 | 内容 |
-| --- | --- |
-| [v1.5.11](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.11) | **5h 额度硬阻断**：Gemini 5h 池子 <10% 时 agy_run/agy_continue 静默不调用（QUOTA_BLOCKED，无弹窗/不通知用户），改用原生工具；周 <20% 保持软提示 |
-| [v1.5.10](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.10) | **模型选择策略**：DSH 按任务自行决定 agy 用哪个模型——agy_quota 输出按模型家族标注（family: gemini/claude/gpt/other + recommended），Claude/GPT (3p) 标为不推荐并排除出 topModels；policyText 明确"不用 Claude/GPT、生图任务直通 agy 不指定模型" |
-| [v1.5.9](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.9) | **Google AI 套餐池子额度查询**：新工具 agy_quota（读 Windows 凭据 → 刷新 OAuth token → fetchAvailableModels/retrieveUserQuotaSummary）；家级弹窗显示周套餐余量；周额度<20% 时 agy_run 附谨慎提示 |
-| [v1.5.8](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.8) | **修复超时误判**：agy 超时错误在 result.error 字段（"timeout waiting for response"），现并入 stderr 归类 → 网络挂起正确触发回退弹窗（此前静默 FAILED） |
-| [v1.5.7](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.7) | **防死等加固**：进程超时强制终止 + HUNG_TIMEOUT 明确报错（附最后事件摘要，区分长命令与真卡死）；额度/认证错误归类增强（quota/余额/额度/401/403）；弹窗显示"无活动 Ns"透明化 |
-| [v1.5.6](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.6) | **点击灯弹窗实时查看 agy 活动**：点状态灯弹出详情面板（当前步骤/工具参数/最近轨迹/上次状态），数据随 1.2s 轮询自动刷新，×/遮罩/Esc 关闭 |
-| [v1.5.5](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.5) | **辨识度优化**：running 圆点改用静态蓝（--dsw-static-blue-500 #3b82f6，原 brand-primary 解析为近黑）、ok 用 static-green-500；灯文字统一显示 AGY（非项目名），项目名/步骤进 tooltip |
-| [v1.5.4](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.4) | **全软件统一为一盏灯 + 模式感知显示**：动态形态不再自渲染灯，改经家级 `agyCollector` 服务把状态推入同一张表；preset 模式常驻（`presetActive`），普通模式仅调用 agy 时临时显示（ok 保留 8s 后隐藏）；**修复后端启动崩溃**（裸名行经 main 二次加载 index.mjs 导致 `agyCollector` 重复注册——新增 `lib/client-entry.mjs` 占位 + main 改向 + provide 防御） |
-| [v1.5.3](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.3) | **修复动态灯读不到状态（永远显示占位灰点）**：`host.call` 返回 invoke 包装 `{ok, value}`，client 必须解包 `value` 才能拿到真实 snapshot；修复后动态灯显示真实状态（⟳ 工作中/✓ 成功），悬浮 tooltip 显示步骤轨迹 |
-| [v1.5.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.2) | **修复动态形态 agy_run 触发 Host guard 拒绝**：动态插件沙箱不暴露 `ctx.emit`，`dynamic/host.js` 的 `publish()` 改为 no-op（动态灯走 `agy_status` RPC，不推事件）；实测调用 agy_run 状态灯全链路正常（就绪→⟳ 工作中→✓ 成功） |
-| [v1.5.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.1) | **修复切换会话空白**：家级灯 client 半改用原生 setInterval/clearInterval（卸载不再可能抛错），Slot id 改为 `agy-indicator-home` 避免与动态插件撞 id |
-| [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | **状态灯随软件启动**：家级插件 `agy-indicator`（cordis.patch.yml 注册，所有会话自动显示、无需审批）；preset 每次状态变化推送事件到家级收集器 |
-| [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | **UI 状态灯按项目分别显示**：per-project 快照（按 cwd 分组）、每项目一盏灯、`agy_status` 支持 `cwd` 过滤、双项目并发验证 |
-| [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **实时观察**：所有形态改用 `stream-json` 逐事件解析，新增 `agy_status` 工具（当前步骤/轨迹/最近运行），状态灯 tooltip 显示当前步骤 |
-| [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH 随软件自启（默认 preset `cordis-agy`）、DSH 内 MCP 注册、外部软件 MCP 注册（Claude Code/Codex）、披露并优先策略、版本管理 |
-| [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | MCP 服务器（零依赖、任何 MCP 宿主可发现）、CI 扩展 |
-| [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | agy 桥接工具、DSH 完全控制、回退弹窗、状态灯、两种形态、文档与 CI |
+| 版本 | 适配 DSH | 内容 |
+| --- | --- | --- |
+| [v1.5.12](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.12) | 0.1.2-alpha.4 | **修复 agy_quota 在含空格路径（DSH Desktop）下恒失败**：`new URL().pathname` 的 `%20` 编码无法还原 → 改用 `fileURLToPath` + 脚本缺失 fallback + 报错带退出码/stderr；preset 与 MCP 同修 |
+| [v1.5.11](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.11) | 0.1.1-rc.2 | **5h 额度硬阻断**：Gemini 5h 池子 <10% 时 agy_run/agy_continue 静默不调用（QUOTA_BLOCKED，无弹窗/不通知用户），改用原生工具；周 <20% 保持软提示 |
+| [v1.5.10](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.10) | 0.1.1-rc.2 | **模型选择策略**：DSH 按任务自行决定 agy 用哪个模型——agy_quota 输出按模型家族标注（family: gemini/claude/gpt/other + recommended），Claude/GPT (3p) 标为不推荐并排除出 topModels；policyText 明确"不用 Claude/GPT、生图任务直通 agy 不指定模型" |
+| [v1.5.9](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.9) | 0.1.1-rc.2 | **Google AI 套餐池子额度查询**：新工具 agy_quota（读 Windows 凭据 → 刷新 OAuth token → fetchAvailableModels/retrieveUserQuotaSummary）；家级弹窗显示周套餐余量；周额度<20% 时 agy_run 附谨慎提示 |
+| [v1.5.8](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.8) | 0.1.1-rc.2 | **修复超时误判**：agy 超时错误在 result.error 字段（"timeout waiting for response"），现并入 stderr 归类 → 网络挂起正确触发回退弹窗（此前静默 FAILED） |
+| [v1.5.7](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.7) | 0.1.1-rc.2 | **防死等加固**：进程超时强制终止 + HUNG_TIMEOUT 明确报错（附最后事件摘要，区分长命令与真卡死）；额度/认证错误归类增强（quota/余额/额度/401/403）；弹窗显示"无活动 Ns"透明化 |
+| [v1.5.6](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.6) | 0.1.1-rc.2 | **点击灯弹窗实时查看 agy 活动**：点状态灯弹出详情面板（当前步骤/工具参数/最近轨迹/上次状态），数据随 1.2s 轮询自动刷新，×/遮罩/Esc 关闭 |
+| [v1.5.5](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.5) | 0.1.1-rc.2 | **辨识度优化**：running 圆点改用静态蓝（--dsw-static-blue-500 #3b82f6，原 brand-primary 解析为近黑）、ok 用 static-green-500；灯文字统一显示 AGY（非项目名），项目名/步骤进 tooltip |
+| [v1.5.4](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.4) | 0.1.1-rc.2 | **全软件统一为一盏灯 + 模式感知显示**：动态形态不再自渲染灯，改经家级 `agyCollector` 服务把状态推入同一张表；preset 模式常驻（`presetActive`），普通模式仅调用 agy 时临时显示（ok 保留 8s 后隐藏）；**修复后端启动崩溃**（裸名行经 main 二次加载 index.mjs 导致 `agyCollector` 重复注册——新增 `lib/client-entry.mjs` 占位 + main 改向 + provide 防御） |
+| [v1.5.3](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.3) | 0.1.1-rc.2 | **修复动态灯读不到状态（永远显示占位灰点）**：`host.call` 返回 invoke 包装 `{ok, value}`，client 必须解包 `value` 才能拿到真实 snapshot；修复后动态灯显示真实状态（⟳ 工作中/✓ 成功），悬浮 tooltip 显示步骤轨迹 |
+| [v1.5.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.2) | 0.1.1-rc.2 | **修复动态形态 agy_run 触发 Host guard 拒绝**：动态插件沙箱不暴露 `ctx.emit`，`dynamic/host.js` 的 `publish()` 改为 no-op（动态灯走 `agy_status` RPC，不推事件）；实测调用 agy_run 状态灯全链路正常（就绪→⟳ 工作中→✓ 成功） |
+| [v1.5.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.1) | 0.1.1-rc.2 | **修复切换会话空白**：家级灯 client 半改用原生 setInterval/clearInterval（卸载不再可能抛错），Slot id 改为 `agy-indicator-home` 避免与动态插件撞 id |
+| [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | 0.1.1-rc.2 | **状态灯随软件启动**：家级插件 `agy-indicator`（cordis.patch.yml 注册，所有会话自动显示、无需审批）；preset 每次状态变化推送事件到家级收集器 |
+| [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | 0.1.1-rc.2 | **UI 状态灯按项目分别显示**：per-project 快照（按 cwd 分组）、每项目一盏灯、`agy_status` 支持 `cwd` 过滤、双项目并发验证 |
+| [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | 0.1.1-rc.2 | **实时观察**：所有形态改用 `stream-json` 逐事件解析，新增 `agy_status` 工具（当前步骤/轨迹/最近运行），状态灯 tooltip 显示当前步骤 |
+| [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | 0.1.1-rc.2 | DSH 随软件自启（默认 preset `cordis-agy`）、DSH 内 MCP 注册、外部软件 MCP 注册（Claude Code/Codex）、披露并优先策略、版本管理 |
+| [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | 0.1.1-rc.2 | MCP 服务器（零依赖、任何 MCP 宿主可发现）、CI 扩展 |
+| [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | 0.1.1-rc.2 | agy 桥接工具、DSH 完全控制、回退弹窗、状态灯、两种形态、文档与 CI |
 
 详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 

@@ -126,7 +126,7 @@ agy-first-bridge/
 ├─ README.md / README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                    # version metadata (v1.5.0, Node >=18)
+├─ package.json                    # version metadata (v1.5.12, Node >=18)
 ├─ MCP-POLICY.md                   # disclose-and-prefer policy for external agents (also ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md)
 ├─ .github/workflows/ci.yml       # node --check + YAML validation
 ├─ assets/indicator-states.svg    # status-light states diagram
@@ -154,17 +154,28 @@ agy-first-bridge/
 
 ## Versions & releases
 
-Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/CHANGELOG.md](docs/CHANGELOG.md)):
+Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/CHANGELOG.md](docs/CHANGELOG.md)). Each release notes the **DSH version it was tested against**:
 
-| Version | Highlights |
-| --- | --- |
-| [v1.5.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.1) | **Fix blank window on session switch**: home-level light client uses native setInterval/clearInterval (unmount can no longer throw); Slot id changed to `agy-indicator-home` to avoid colliding with the dynamic plugin |
-| [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | **Status light starts with the software**: home-level plugin `agy-indicator` (registered via `cordis.patch.yml`, appears in every session, no approval); the preset emits status events to the home-level collector on every state change |
-| [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | **Per-project status lights**: snapshots grouped by project (cwd), one light per project in the UI, `agy_status` supports `cwd` filtering, verified with two concurrent projects |
-| [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | **Live observation**: all forms run agy with `stream-json` and parse `step_update` events; new `agy_status` tool (current step / trail / last run); status-light tooltip shows the current step |
-| [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | DSH auto-start (default preset `cordis-agy`), in-DSH MCP registration, external MCP registration (Claude Code / Codex), disclose-and-prefer policy, version management |
-| [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | Zero-dependency MCP server discoverable by any MCP host, CI extension |
-| [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | agy bridge tools, full DSH control, fallback dialog, status light, both forms, docs & CI |
+| Version | DSH | Highlights |
+| --- | --- | --- |
+| [v1.5.12](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.12) | 0.1.2-alpha.4 | **Fix agy_quota failing on paths containing spaces** (`DSH Desktop`): `new URL().pathname` percent-encodes spaces (`%20`) that the drive-letter regex cannot restore → switched to `fileURLToPath()` + fallback script path + exit-code/stderr in errors; fixed in both preset and MCP |
+| [v1.5.11](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.11) | 0.1.1-rc.2 | **5h quota hard block**: when the Gemini 5h pool drops below 10%, agy_run/agy_continue silently refuse to call agy (QUOTA_BLOCKED, no dialog / no user notification) — finish with native tools; weekly <20% stays a soft hint |
+| [v1.5.10](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.10) | 0.1.1-rc.2 | **Model selection policy**: DSH decides the agy model per task — agy_quota marks each model's family (gemini/claude/gpt/other + recommended); Claude/GPT (3p) marked not recommended and excluded from topModels; policyText says never pass Claude/GPT and send image tasks to agy without a model |
+| [v1.5.9](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.9) | 0.1.1-rc.2 | **Google AI plan quota query**: new tool agy_quota (Windows credential → OAuth refresh → fetchAvailableModels/retrieveUserQuotaSummary); home light popup shows weekly quota; agy_run appends a caution note when weekly quota <20% |
+| [v1.5.8](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.8) | 0.1.1-rc.2 | **Fix timeout misclassification**: agy timeout errors live in result.error ("timeout waiting for response") — now merged into stderr so network hangs correctly trigger the fallback dialog (previously silent FAILED) |
+| [v1.5.7](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.7) | 0.1.1-rc.2 | **Hang-proofing**: forced process terminate + explicit HUNG_TIMEOUT with last-event summary; quota/auth error classification extended (quota/balance/401/403); dialog shows "no activity for Ns" |
+| [v1.5.6](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.6) | 0.1.1-rc.2 | **Click-the-light live activity panel**: click the status light to open a details panel (current step / tool args / recent trail / last status), refreshed by the 1.2s poll; close via ×/overlay/Esc |
+| [v1.5.5](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.5) | 0.1.1-rc.2 | **Legibility polish**: running dot uses static blue, ok uses static green; the light always says AGY (project name/step moved to tooltip) |
+| [v1.5.4](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.4) | 0.1.1-rc.2 | **One app-wide light + mode-aware display**: dynamic form stops self-rendering, pushes state via the home-level `agyCollector`; preset form always on, normal mode shows temporarily after agy calls; **fix backend startup crash** (added `lib/client-entry.mjs` placeholder) |
+| [v1.5.3](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.3) | 0.1.1-rc.2 | **Fix dynamic light reading no state**: `host.call` returns an invoke wrapper `{ok, value}`; the client must unwrap `value` — after the fix the dynamic light shows real state |
+| [v1.5.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.2) | 0.1.1-rc.2 | **Fix dynamic agy_run rejected by Host guard**: dynamic sandbox lacks `ctx.emit` → `publish()` became a no-op; verified full light chain (ready → running → success) |
+| [v1.5.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.1) | 0.1.1-rc.2 | **Fix blank window on session switch**: home-level light client uses native setInterval/clearInterval (unmount can no longer throw); Slot id changed to `agy-indicator-home` to avoid colliding with the dynamic plugin |
+| [v1.5.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.0) | 0.1.1-rc.2 | **Status light starts with the software**: home-level plugin `agy-indicator` (registered via `cordis.patch.yml`, appears in every session, no approval); the preset emits status events to the home-level collector on every state change |
+| [v1.4.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.4.0) | 0.1.1-rc.2 | **Per-project status lights**: snapshots grouped by project (cwd), one light per project in the UI, `agy_status` supports `cwd` filtering, verified with two concurrent projects |
+| [v1.3.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.3.0) | 0.1.1-rc.2 | **Live observation**: all forms run agy with `stream-json` and parse `step_update` events; new `agy_status` tool (current step / trail / last run); status-light tooltip shows the current step |
+| [v1.2.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.2.0) | 0.1.1-rc.2 | DSH auto-start (default preset `cordis-agy`), in-DSH MCP registration, external MCP registration (Claude Code / Codex), disclose-and-prefer policy, version management |
+| [v1.1.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.1.0) | 0.1.1-rc.2 | Zero-dependency MCP server discoverable by any MCP host, CI extension |
+| [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | 0.1.1-rc.2 | agy bridge tools, full DSH control, fallback dialog, status light, both forms, docs & CI |
 
 ## Security notes
 

@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.12] - 2026
+
+### Fixed
+- **agy_quota 在含空格路径的部署（如 `DSH Desktop`）下恒报 `no JSON output`**：`new URL(...).pathname` 对空格返回 `%20` 百分号编码，`replace(/^\/([A-Za-z]:)/, '$1')` 只剥前导斜杠、无法还原 `%20`，导致拼出的脚本路径永远不存在、子进程无输出。改为 `fileURLToPath()` 正确解码（preset 与 MCP 两处同修）。
+- 脚本定位增加 fallback（`Desktop\agy-first-bridge\bin\agy-quota.mjs`）与缺失检测；失败报错带退出码与 stderr，便于诊断。
+- 顺带影响修复：agy_run 的额度预检此前也因同一路径 bug 静默跳过（cachedQuotaCheck 拿不到 JSON），现恢复正常。
+
+### Notes
+- 适配 DSH：**0.1.2-alpha.4**（历史 v1.0.0 → v1.5.11 适配 DSH 0.1.1-rc.2）。
+- 实测：本机部署路径（含空格）下 agy_quota 正常返回 gemini-weekly 23% / gemini-5h 92%、28 模型中 25 recommended。
 ## [1.5.11] - 2026
 
 ### Added

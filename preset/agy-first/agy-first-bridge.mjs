@@ -17,6 +17,9 @@
 export const name = 'agy-first-bridge'
 export const inject = ['tools', 'subprocess', 'systemPrompt', 'timer']
 
+import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
+
 const CWD_FALLBACK = 'C:\\Users\\lcl\\Desktop\\DSH'
 
 const OUTPUT_SCHEMA = { type: 'object', additionalProperties: true }
@@ -586,15 +589,30 @@ export function apply(ctx) {
     return res
   }
 
+  const QUOTA_FALLBACK_SCRIPTS = [
+    'C:\\Users\\lcl\\Desktop\\agy-first-bridge\\bin\\agy-quota.mjs',
+  ]
+
   async function execQuotaScript() {
-    const scriptPath = new URL('../../bin/agy-quota.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+    // fileURLToPath 而非 .pathname：路径含空格（"DSH Desktop"）时 .pathname
+    // 会给出百分号编码（%20），且对盘符的 ^\/([A-Za-z]:) 正则只剥前导斜杠、
+    // 保留 %20，导致脚本永远打不开 → agy_quota 恒报 no JSON output。
+    let scriptPath = fileURLToPath(new URL('../../bin/agy-quota.mjs', import.meta.url))
+    if (!existsSync(scriptPath)) {
+      for (const f of QUOTA_FALLBACK_SCRIPTS) { if (existsSync(f)) { scriptPath = f; break } }
+    }
     const node = process.execPath || 'node'
+    if (!existsSync(scriptPath)) {
+      return { ok: false, error: 'quota script not found: ' + scriptPath + ' (and no fallback exists)' }
+    }
     const handle = subprocess.spawn({ argv: [node, scriptPath], cwd: CWD_FALLBACK, stdio, graceMs: 5000 })
     const outcome = await handle.done
     const s = readStreams(handle)
     const stdoutText = s.stdoutText || ''
     const jsonMatch = stdoutText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return { ok: false, error: 'no JSON output: ' + stdoutText.slice(0, 300) }
+    if (!jsonMatch) {
+      return { ok: false, error: 'no JSON output (exit=' + (outcome && outcome.exitCode) + '): ' + (stdoutText.slice(0, 200) || s.stderrText.slice(0, 200)) }
+    }
     try {
       const parsed = JSON.parse(jsonMatch[0])
       return parsed
