@@ -33,13 +33,46 @@
 //                 args    = ["C:\\path\\to\\agy-mcp-server.mjs"]
 
 import { spawn } from 'node:child_process'
-import { resolve as resolvePath } from 'node:path'
+import { resolve as resolvePath, dirname, join as joinPath } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.12'
+const VERSION = '1.5.13'
 const PROTOCOL = '2024-11-05'
+
+// ── home-light bridge ────────────────────────────────────────────────────────
+// 家级 agy 状态灯（cordis.patch.yml 的 agy-indicator）只收宿主进程内的
+// ctx.emit('agy/status')；本 server 是 dsh-mcp-client 拉起的独立 stdio 子进程，
+// 没有 ctx，无法直接 emit。桥接：每次状态变化把 projects 快照写到一个固定
+// JSON 文件，家级灯 index.mjs 在 status 路由里读盘合并（同 cwd 覆盖）。
+// 文件位置 = dsh-home\plugins\agy-indicator\mcp-live.json（相对本文件上溯两级
+// 到 dsh-home，再进 plugins\agy-indicator\）。AGY_MCP_LIVE_FILE 可覆盖。
+const MCP_LIVE_FILE = process.env.AGY_MCP_LIVE_FILE
+  || joinPath(dirname(dirname(fileURLToPath(import.meta.url))), 'plugins', 'agy-indicator', 'mcp-live.json')
+
+function persistLive() {
+  try {
+    const list = Object.keys(projects).map((k) => projects[k])
+    // 字段对齐家级灯 mergeSnapshot：updatedAt/lastAt 用 epoch ms（家级
+    // Number(ISO)=NaN 会回退 Date.now()，导致 ok 永不超时）。
+    const out = list.map((p) => ({
+      cwd: p.cwd,
+      name: p.name,
+      state: p.state,
+      running: p.running,
+      current: p.current || null,
+      trail: Array.isArray(p.trail) ? p.trail.slice(-12) : [],
+      lastStatus: p.last ? p.last.status : null,
+      lastAt: p.last ? Date.parse(p.last.at) || 0 : 0,
+      lastConversationId: p.last ? p.last.conversationId : null,
+      updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : (Date.parse(p.updatedAt) || 0)
+    }))
+    const dir = dirname(MCP_LIVE_FILE)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(MCP_LIVE_FILE, JSON.stringify({ from: 'mcp', writtenAt: Date.now(), projects: out }), 'utf8')
+  } catch (e) { /* 家级灯桥接失败不影响 agy 调用本身 */ }
+}
 
 // Reuse the exact fallback cwd of the DSH plugin unless overridden.
 const CWD_FALLBACK = process.env.AGY_MCP_CWD || 'C:\\Users\\lcl\\Desktop\\DSH'
@@ -122,6 +155,7 @@ function foldStepUpdate(ev, cwd) {
   } else if (s.step_type === 'agent_response' && s.state === 'ACTIVE' && s.text_delta) {
     p.current = { tool: 'agent_response', args: { text_delta: String(s.text_delta).slice(0, MAX_ARG_LEN) }, stepIndex: s.step_index, since: nowIso() }
   }
+  persistLive()
 }
 
 function foldResult(parsed, cwd) {
@@ -133,6 +167,7 @@ function foldResult(parsed, cwd) {
     at: nowIso()
   }
   p.state = p.running > 0 ? 'running' : (p.last && p.last.status === 'SUCCESS' ? 'ok' : (p.last ? 'failed' : 'idle'))
+  persistLive()
 }
 
 function globalSnapshot() {
@@ -256,6 +291,7 @@ function runAgy(args) {
     p.running += 1
     p.state = 'running'
     p.updatedAt = nowIso()
+    persistLive()
     let out = '', err = ''
     let killed = false
     const timer = setTimeout(() => { killed = true; try { child.kill() } catch {} }, (timeoutSec + 60) * 1000)
@@ -283,6 +319,7 @@ function runAgy(args) {
       p.running = Math.max(0, p.running - 1)
       p.state = 'failed'
       p.updatedAt = nowIso()
+      persistLive()
       resolve({ ok: false, status: 'AGY_UNAVAILABLE', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: args.mode || 'accept-edits', stderr: 'agy spawn failed: ' + String(e && e.message || e) })
     })
     child.on('close', (code) => {
@@ -292,6 +329,7 @@ function runAgy(args) {
       const outcome = { exitCode: killed ? 124 : code }
       const parsed = parseAgyJson(out)
       if (parsed) foldResult(parsed, cwd)
+      persistLive()
       let res = buildResult(parsed, outcome, args.mode || 'accept-edits', err, out)
       if (killed && !res.ok) {
         res.status = 'HUNG_TIMEOUT'
@@ -396,7 +434,7 @@ const TOOLS = [
   },
   {
     name: 'agy_quota',
-    description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Each model carries family (gemini/claude/gpt/other) and recommended (false for Claude/GPT 3p models — do not pass those to agy_run; they are effectively unusable). Call before agy_run when quota may be low; weekly bucket below ~0.2 is low.',
+    description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Each model carries family (gemini/claude/gpt/other) and recommended (false for Claude/GPT 3p models — do not pass those to agy_run; they are effectively unusable). Call before agy_run only if you want the numbers: the Gemini 5h window is the sole gate (agy_run/agy_continue already refuse silently below 10% of it), while the weekly window is NOT a per-task gate — an exhausted weekly bucket only means agy is a poor pick for the rest of the week, never a reason to abort or shrink the current task.',
     inputSchema: { type: 'object', properties: { summary: { type: 'boolean', description: 'Return only a compact summary (weekly buckets + top models).' } } }
   }
 ]

@@ -14,11 +14,11 @@
 // 家级（cordis.patch.yml）插件运行在 host 组合的 root realm；会话内插件的
 // ctx.emit 事件是 app 级广播，不受 isolate realm（只隔离服务）影响。
 //
-// 路由返回 JSON：{ state, running, projects[], presetActive }。
-// presetActive=true 表示当前有 agy 优先会话在线 → 家级灯常驻显示（idle 也
-// 显示 "AGY 就绪"）；presetActive=false 时家级灯仅在有项目数据时显示
-// （调用 agy 时临时出现：运行/回退期间显示，ok/failed 结果短暂保留 8 秒后
-// 隐藏，空闲时标题栏无灯）。
+// 路由返回 JSON：{ state, running, projects[], presetActive, lastModeAt }。
+// presetActive 是「心跳租约」（TTL 75s，preset 每 30s 心跳续期）而非粘滞布尔
+// （对齐 codebuddy-indicator v1.1.1）：最后一个 agy preset 会话关闭后租约到期
+// 自动熄灭。家级 client 另按本会话 agentPreset 做 per-session 判定（agy preset
+// 会话常驻 / 普通会话按需显示），这里的租约是其判定不可用（UNKNOWN）时的回退。
 // 客户端（lib/client.js）每 1.2s 轮询一次并按项目渲染状态灯。
 
 export const name = 'agy-indicator'
@@ -79,8 +79,16 @@ export function apply(ctx) {
   // cwd -> project record（全局视角：项目按工作目录唯一）
   const projects = Object.create(null)
   const MAX_PROJECTS = 24
-  // 是否有 agy 优先会话在线（preset 挂载时 emit 'agy/mode' 置真）
-  let presetActive = false
+  // 是否有 agy 优先会话在线（preset 挂载时 emit 'agy/mode' 续租）。
+  // presetActive 是「心跳租约」而非粘滞标志（对齐 codebuddy-indicator v1.1.1）：
+  // preset 每 30s 宣告一次 active:true，TTL 75s（≈两拍容差，容忍事件循环抖动）。
+  // 最后一个 agy-first 会话关闭后心跳停止，租约到期自动熄灭 —— 否则任何会话
+  // 加载过一次 preset 之后，所有会话（含非 agy 模式）的标题栏都会常驻灯。
+  // 家级 client 另做 per-session 判定（本会话 agentPreset 才是常驻的真正依据），
+  // 这里的租约是客户端判定不可用（UNKNOWN）时的回退。
+  const PRESET_TTL_MS = 75000
+  let presetActiveUntil = 0
+  let lastModeAt = 0
 
   function projectName(cwd) {
     const s = String(cwd || '')
@@ -119,10 +127,17 @@ export function apply(ctx) {
     }
   }
 
-  // preset 形态挂载时宣告 agy 优先模式（常驻灯依据）
+  // preset 形态挂载时宣告 agy 优先模式（常驻灯依据）。active:true 续租；
+  // active:false 立即熄灭（preset 当前不主动发 false——依赖租约到期——但收到
+  // 即尊重，面向未来语义完整）。
   ctx.on('agy/mode', (payload) => {
     try {
-      presetActive = !!(payload && payload.active)
+      if (payload && payload.active) {
+        presetActiveUntil = Date.now() + PRESET_TTL_MS
+        lastModeAt = Date.now()
+      } else {
+        presetActiveUntil = 0
+      }
     } catch (e) { /* ignore */ }
   })
 
@@ -135,6 +150,40 @@ export function apply(ctx) {
       // 快照合并失败不应影响宿主；忽略单次坏负载
     }
   })
+
+  // ── MCP 形态桥接（读盘合并）────────────────────────────────────────────
+  // mcp__agy__* 工具由 agy-mcp-server.mjs（dsh-mcp-client 拉起的独立子进程）
+  // 执行，它没有 ctx 无法 emit；约定把状态写到本插件目录下的 mcp-live.json
+  // （AGY_MCP_LIVE_FILE 可覆盖，默认 <dsh-home>/plugins/agy-indicator/）。
+  // 这里在每次 status 请求（client 每 1.2s 轮询）时读盘合并，MCP 会话的
+  // 运行/结果即可进同一张 projects 表 → 普通模式调用 mcp__agy__ 也有灯。
+  const MCP_LIVE_FILE = process.env.AGY_MCP_LIVE_FILE
+    || new URL('../mcp-live.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1').replace(/%20/g, ' ')
+  let liveReadAt = 0
+  const LIVE_READ_MIN_MS = 400
+  let fsRead = null
+  let fsExists = null
+  ;(async () => {
+    try {
+      const fs = await import('node:fs')
+      fsRead = fs.readFileSync
+      fsExists = fs.existsSync
+    } catch (e) { fsRead = null; fsExists = null }
+  })()
+  function mergeLiveFile() {
+    if (!fsRead || !fsExists) return
+    const now = Date.now()
+    if (now - liveReadAt < LIVE_READ_MIN_MS) return
+    liveReadAt = now
+    try {
+      if (!fsExists(MCP_LIVE_FILE)) return
+      const text = fsRead(MCP_LIVE_FILE, 'utf8')
+      if (!text) return
+      const data = JSON.parse(text)
+      if (!data || !Array.isArray(data.projects)) return
+      mergeSnapshot({ projects: data.projects })
+    } catch (e) { /* 无文件/坏 JSON：忽略 */ }
+  }
 
   // 暴露服务给动态形态（沙箱无 ctx.emit，通过服务方法推入）。
   // 注意：该服务被 ctx.provide 后，会话内动态插件可 ctx.get('agyCollector')。
@@ -154,15 +203,19 @@ export function apply(ctx) {
         path: '/agy-indicator/status',
         handler: (req, res) => {
           try {
+            // 先并入 MCP server 写盘的状态（若存在），再组装响应
+            mergeLiveFile()
             const now = Date.now()
-            // 过滤过期的 idle 项目：避免残留假数据。
-            // - presetActive（agy 优先模式）：ok/idle 项目保留展示，常驻灯
-            //   反映最近活动（10 分钟 TTL）。
-            // - 非 presetActive（普通模式）：用户要求「调用 agy 时显示即可」——
-            //   灯只在运行/回退时出现；ok/failed 项目短暂保留 8 秒让用户
-            //   看到结果后消失，空闲时标题栏无灯。
-            const OK_HOLD_MS = presetActive ? 10 * 60 * 1000 : 8000
-            const STALE_MS = 10 * 60 * 1000
+            // presetActive = 租约未到期（还有 agy preset 会话在心跳）
+            const presetActive = now < presetActiveUntil
+            // 过滤过期的项目：避免残留假数据。
+            // ok/failed 统一短暂保留（8s）——任何会话（含 agy 优先）的常驻
+            // 「就绪灯」由 client 端按本会话 preset 判定（readyShow）提供，
+            // 不依赖旧 ok 项目在表里滞留；否则全局表跨会话共享时，一个
+            // agy preset 会话的心跳（presetActive=true）会让所有普通会话的
+            // ok 结果保留 10 分钟不消失。running/回退期间恒保留。
+            const OK_HOLD_MS = 8000
+            const STALE_MS = 10000
             const list = Object.keys(projects)
               .map((k) => projects[k])
               .filter((p) => {
@@ -175,7 +228,7 @@ export function apply(ctx) {
               .sort((a, b) => b.updatedAt - a.updatedAt)
             const running = list.reduce((n, p) => n + p.running, 0)
             const state = running > 0 ? 'running' : (list.some((p) => p.fallbackActive) ? 'fallback' : (list.length ? 'ok' : 'idle'))
-            const body = JSON.stringify({ state, running, projects: list, presetActive })
+            const body = JSON.stringify({ state, running, projects: list, presetActive, lastModeAt })
             res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
             res.end(body)
           } catch (e) {

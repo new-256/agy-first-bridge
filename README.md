@@ -174,6 +174,7 @@ agy-first-bridge/
 
 | 版本 | 适配 DSH | 内容 |
 | --- | --- | --- |
+| [v1.5.13](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.13) | 0.1.2-alpha.5 | **agy MCP 全局注入**（家级 patch 注册 → 所有 preset 都能调 `mcp__agy__*`）＋ **MCP 通道点灯**（server 写盘 `mcp-live.json`，家级灯读盘合并）＋ **额度门禁只认 5h**（移除周额度软警告与相关提示词；周用量不再参与单次任务判断）＋ 修复调用结束后状态灯跨会话常驻（`OK_HOLD_MS` 不再随全局租约放大到 10 分钟） |
 | [v1.5.12](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.12) | 0.1.2-alpha.4 | **修复 agy_quota 在含空格路径（DSH Desktop）下恒失败**：`new URL().pathname` 的 `%20` 编码无法还原 → 改用 `fileURLToPath` + 脚本缺失 fallback + 报错带退出码/stderr；preset 与 MCP 同修 |
 | [v1.5.11](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.11) | 0.1.1-rc.2 | **5h 额度硬阻断**：Gemini 5h 池子 <10% 时 agy_run/agy_continue 静默不调用（QUOTA_BLOCKED，无弹窗/不通知用户），改用原生工具；周 <20% 保持软提示 |
 | [v1.5.10](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.10) | 0.1.1-rc.2 | **模型选择策略**：DSH 按任务自行决定 agy 用哪个模型——agy_quota 输出按模型家族标注（family: gemini/claude/gpt/other + recommended），Claude/GPT (3p) 标为不推荐并排除出 topModels；policyText 明确"不用 Claude/GPT、生图任务直通 agy 不指定模型" |

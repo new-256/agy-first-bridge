@@ -265,12 +265,13 @@ return {
       const cwd = resolveCwd(args)
       const built = buildArgv(exe, args, planActiveFor(exec))
 
-      // 额度预检（v1.5.9 / v1.5.11）：
-      // - v1.5.11 硬阻断：Gemini 5h 池子余量 <10% → 不调用 agy，静默返回
-      //   QUOTA_BLOCKED（不弹窗、不通知用户），前台/后台都生效。
-      // - v1.5.9 软警告：周余量 <20% 时前台结果附 [quota] 提示。
+      // 额度预检（v1.5.13 起只看 5h 窗口）：
+      // 单次任务的门禁只取决于 Gemini 5h 池子——5h 枯竭意味着本轮任务里
+      // agy 确实跑不动，必须阻断（<10% → 静默 QUOTA_BLOCKED，不弹窗）。
+      // 周用量【不参与单次任务判断】：周额度耗尽只说明这个子代理这周不该再用，
+      // 属于「换/不用 agy」的选择，不是 agy 临时不可用，因此不再在调用路径上
+      // 产生 [quota] 警告或影响结果（周信息仍可由 agy_quota 工具主动查询）。
       // cachedQuotaCheck 带 30 分钟缓存，预检失败静默（不阻塞调用）。
-      let quotaWarning = ''
       try {
         const q = await cachedQuotaCheck()
         if (q && q.ok) {
@@ -281,12 +282,6 @@ return {
           const low5h = fiveHBuckets.find(function (b) { return typeof b.remainingFraction === 'number' && b.remainingFraction < 0.10 })
           if (low5h) {
             return { ok: false, status: 'QUOTA_BLOCKED', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: 'agy blocked: Gemini 5h pool quota < 10% (' + Math.round(low5h.remainingFraction * 100) + '%, reset ' + (low5h.resetTime || '?') + '). Use native tools; do not call agy.' }
-          }
-          if (!args.background) {
-            const low = (q.groups || []).flatMap(function (g) { return (g.buckets || []).filter(function (b) { return b.window === 'weekly' }) }).filter(function (b) { return typeof b.remainingFraction === 'number' && b.remainingFraction < 0.2 })
-            if (low.length) {
-              quotaWarning = '\n[quota] 周套餐余量低：' + low.map(function (b) { return (b.bucketId || '') + ' ' + Math.round(b.remainingFraction * 100) + '% (reset ' + (b.resetTime || '?') + ')' }).join('、') + ' —— 建议降低任务规模或用 agy_quota 确认。'
-            }
           }
         }
       } catch (e) { /* ignore */ }
@@ -331,7 +326,6 @@ return {
           break
         }
         if (!res.ok && !res.fallback && isLimited(res) && attempt >= 2) { if (await askFallback(exec, res) === 'fallback') res = fallbackResult(res, built.mode) }
-        if (quotaWarning && res.ok) res.response = String(res.response || '') + quotaWarning
         end(res, cwd); return res
       } catch (e) { const res = { ok: false, status: 'SPAWN_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: String(e && e.message || e) }; const out = (await askFallback(exec, res) === 'fallback') ? fallbackResult(res, built.mode) : res; end(out, cwd); return out }
     }
@@ -421,7 +415,7 @@ return {
 
     harness.registerTool(ctx, harness.defineTool({ name: 'agy_status', description: 'Read a live snapshot of what the local agy agent is currently doing. Returns one section per project (working directory): running count, current step (tool name + arguments being executed, or agent_response thinking/typing), recent step trail, last completed run status + conversation id. Call this to check on an in-flight agy_run/agy_continue without waiting for it to finish.', parameters: { cwd: { type: 'string', description: 'Optional: filter the snapshot to a single project (working directory).' } }, output: STATUS_OUT, execute: function (args) { const a = args || {}; const snap = snapshot(); if (a.cwd) { const key = String(a.cwd); snap.projects = snap.projects.filter(function (p) { return p.cwd === key }); const g = snap.projects[0]; if (g) { snap.state = g.state; snap.running = g.running; snap.current = g.current; snap.trail = g.trail; snap.lastStatus = g.lastStatus; snap.lastAt = g.lastAt; snap.lastConversationId = g.lastConversationId; snap.fallbackActive = g.fallbackActive; snap.updatedAt = g.updatedAt } } return snap } }))
 
-    harness.registerTool(ctx, harness.defineTool({ name: 'agy_quota', description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Returns { ok, models: [{name, percentage, resetTime, displayName}], groups: [{displayName, buckets: [{bucketId, window, remainingFraction, resetTime}]}], tier }. Call this BEFORE agy_run when you want to confirm there is quota left (e.g. weekly Gemini bucket below ~20% is low; avoid heavy runs then). If the credential is missing the tool returns { ok:false, error } and agy_run still works normally.', parameters: { summary: { type: 'boolean', description: 'Return only a compact summary (weekly buckets + top models).' } }, output: QUOTA_OUT, execute: async function (args) { const a = args || {}; const res = await cachedQuotaCheck(); if (res.ok && a.summary) { const weekly = (res.groups || []).flatMap(function (g) { return (g.buckets || []).filter(function (b) { return b.window === 'weekly' }).map(function (b) { return { g: g.displayName, id: b.bucketId, pct: Math.round((b.remainingFraction || 0) * 100), reset: b.resetTime } }) }); const top = (res.models || []).slice(0, 4).map(function (m) { return (m.displayName || m.name) + ' ' + m.percentage + '%' }).join(', '); return { ok: true, summary: { weekly: weekly, topModels: top }, models: res.models, groups: res.groups, tier: res.tier } } return res } }))
+    harness.registerTool(ctx, harness.defineTool({ name: 'agy_quota', description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Returns { ok, models: [{name, percentage, resetTime, displayName}], groups: [{displayName, buckets: [{bucketId, window, remainingFraction, resetTime}]}], tier }. GATING RULE: only the Gemini 5h window decides whether agy can run this task — agy_run/agy_continue already refuse silently below 10% of the 5h pool, so you normally do not need to pre-check. The weekly window is NOT a per-task gate: a drained weekly bucket only means agy is a poor choice for the rest of the week (pick another subagent or your own tools), never a reason to abort or shrink the current task. If the credential is missing the tool returns { ok:false, error } and agy_run still works normally.', parameters: { summary: { type: 'boolean', description: 'Return only a compact summary (weekly buckets + top models).' } }, output: QUOTA_OUT, execute: async function (args) { const a = args || {}; const res = await cachedQuotaCheck(); if (res.ok && a.summary) { const weekly = (res.groups || []).flatMap(function (g) { return (g.buckets || []).filter(function (b) { return b.window === 'weekly' }).map(function (b) { return { g: g.displayName, id: b.bucketId, pct: Math.round((b.remainingFraction || 0) * 100), reset: b.resetTime } }) }); const top = (res.models || []).slice(0, 4).map(function (m) { return (m.displayName || m.name) + ' ' + m.percentage + '%' }).join(', '); return { ok: true, summary: { weekly: weekly, topModels: top }, models: res.models, groups: res.groups, tier: res.tier } } return res } }))
 
     const policyText = [
       'agy-first execution policy (local agy CLI bridge, with fallback + live indicator + live status tool).',
@@ -439,7 +433,7 @@ return {
       '',
       'Model selection policy (v1.5.10): you decide which model agy uses, based on the task at hand. Call agy_quota first to see the available pool and per-model remaining %. Use the Gemini pool (gemini-* models) or the other utility models (tab_*, chat_*) — the recommended:true entries. Do NOT pass a Claude or GPT model (family claude/gpt, marked [3p: 不推荐]) to agy_run: those 3p models are effectively unusable on this plan and will fail or produce poor results. When the task is image generation / image editing, dispatch it straight to agy_run WITHOUT specifying a model: agy itself selects the right image model and handles it; do not filter or block image tasks.',
       '',
-      'Quota guard (v1.5.11): if the Gemini 5h pool quota is below 10%, agy_run/agy_continue will SILENTLY refuse to call agy (status QUOTA_BLOCKED, no dialog, no user notification) — finish the task with native tools instead. A weekly quota below 20% is only a soft hint appended to the result; you may still call agy but prefer smaller tasks.'
+      'Quota guard (v1.5.13): the ONLY quota gate for a task is the Gemini 5h pool — below 10% agy_run/agy_continue SILENTLY refuse to call agy (status QUOTA_BLOCKED, no dialog, no user notification), because a drained 5h window means agy genuinely cannot work this round; finish the task with native tools instead. Weekly quota is NOT a task gate and is no longer checked on the call path: a low or exhausted weekly bucket only means agy is a poor pick for the rest of the week (prefer another subagent or your own tools next time) — never shrink, delay, or abandon the current task because of weekly usage.'
     ].join('\n')
 
     ctx.systemPrompt.section({ name: 'agy:policy', order: 5, text: policyText })

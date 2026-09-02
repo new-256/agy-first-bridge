@@ -15,11 +15,12 @@
 // --dsw-static-green-500 (#22c55e)。文字统一显示 "AGY"（非项目名），
 // 项目名/当前步骤在 tooltip 里。
 //
-// 显示策略（v1.5.4）：
-// - presetActive=true（当前有 agy 优先会话在线）→ 常驻显示：无项目数据时
-//   显示单个占位 pill "AGY 就绪"。
-// - presetActive=false（普通模式会话）→ 仅在有项目数据时显示（调用 agy 时
-//   临时出现，空闲时隐藏），不渲染占位。
+// 显示策略（v1.5.4 + v1.5.12 修复）：
+// - 本会话是 agy preset（agentPreset ∈ cordis-agy/agy-first，经 sessions.list
+//   快照判定）→ 常驻显示：无项目数据时显示单个占位 pill "AGY 就绪"。
+// - 普通模式会话（已确认非 agy preset）→ 仅在有项目数据时显示（调用 agy 时
+//   临时出现，空闲时隐藏），不渲染占位。per-session 判定避免一个 agy preset
+//   会话的全局租约让所有会话都常驻灯。
 //
 // 动态形态（无 ctx.emit 的沙箱插件）不再自己注册标题栏灯；它通过家级 host
 // 暴露的 agyCollector 服务把状态推入同一张表，由本灯统一显示。因此全软件
@@ -126,6 +127,7 @@ window.__ModuleLoader__.load({
       const s = props.s;
       const onClose = props.onClose;
       const quota = props.quota;
+      const mode = props.mode || "";
       const rows = [];
       // 额度区（可选增强）：显示周套餐余量（来自 /agy-indicator/quota）。
       if (quota && quota.ok && Array.isArray(quota.weekly) && quota.weekly.length) {
@@ -172,7 +174,7 @@ window.__ModuleLoader__.load({
       } else {
         rows.push(react.createElement("div", { key: "empty", className: "agy-pop-empty" }, "暂无 agy 活动"));
       }
-      const headText = "agy 状态" + (s && s.state ? " · " + s.state + (s.running > 0 ? " (" + s.running + " running)" : "") : "") + (s && s.presetActive ? " · agy 优先" : " · 普通模式");
+      const headText = "agy 状态" + (s && s.state ? " · " + s.state + (s.running > 0 ? " (" + s.running + " running)" : "") : "") + mode;
       return react.createElement("div", { className: "agy-pop-overlay", onClick: onClose },
         react.createElement("div", { className: "agy-pop-panel", onClick: function (e) { e.stopPropagation(); } },
           react.createElement("div", { className: "agy-pop-head" },
@@ -181,9 +183,43 @@ window.__ModuleLoader__.load({
           react.createElement("div", { className: "agy-pop-body" }, rows)));
     }
 
-    // 每 1.2s 拉一次 /agy-indicator/status，按项目渲染灯。
-    // 组件不引用 ctx：轮询用原生 setInterval，卸载用 clearInterval（必成功）。
-    function Indicator() {
+    // per-session preset 判定（对齐 codebuddy-indicator v1.1.2 的双通道实现）：
+    // 家级 host 的 presetActive 是全局租约——任何一个 agy preset 会话在线都会
+    // 续租，普通会话若只看 presetActive 就会误以为自己是 agy 模式而常驻灯。
+    // 真正的常驻资格是「本会话的 agentPreset 就是 agy preset」。两条读取通道：
+    //   a) 框架标准 props（DSH ≥ 0.3.14 / dsh 0.1.2-alpha.5）：sessionId 与
+    //      useSessions 选择器钩子由会话作用域槽位框架注入，读
+    //      byId[sessionId].projectionValues.agentPreset（alpha.5 起 preset 字段移入投影值）；
+    //   b) 旧式注入（更早版本）：inject(sessionId) 收到会话 id + sessions 服务的
+    //      list 快照（byId[sessionId].agentPreset，旧 summary 字段）。
+    // 两条通道的读取函数同时认新旧两种 summary 形状。都不可用 → UNKNOWN →
+    // 回退端点的全局心跳租约（host 半）。
+    // UNKNOWN 哨兵必须是稳定原始值（getSnapshot 契约）。
+    const PRESET_UNKNOWN = "\u0000unknown";
+    // agy 优先 preset 的 id（roster 目录名）。默认 cordis-agy；兼容仓库原装 agy-first。
+    function isAgyPreset(id) {
+      return id === "cordis-agy" || id === "agy-first" || id === "cordis-agy-first";
+    }
+    function subscribeNoop() { return function () { }; }
+    function presetOfSummary(sum) {
+      if (!sum) return PRESET_UNKNOWN;
+      if (sum.projectionValues && typeof sum.projectionValues.agentPreset === "string") return sum.projectionValues.agentPreset;
+      if (typeof sum.agentPreset === "string") return sum.agentPreset;
+      return PRESET_UNKNOWN;
+    }
+    function presetOfState(state, sessionId) {
+      try {
+        if (!state || !sessionId || !state.byId) return PRESET_UNKNOWN;
+        return presetOfSummary(state.byId[sessionId]);
+      } catch (e) { return PRESET_UNKNOWN; }
+    }
+
+    function Indicator(props) {
+      const p = props || {};
+      // 标准属性（新框架）优先；老框架经 inject(sessionId) 提供 injectedSessionId。
+      const sessionId = (typeof p.sessionId === "string" && p.sessionId) || (typeof p.injectedSessionId === "string" && p.injectedSessionId) || undefined;
+      const useSess = typeof p.useSessions === "function" ? p.useSessions : null;
+      const sessionsSvc = p.sessionsSvc;
       const st = react.useState(null);
       const s = st[0];
       const setS = st[1];
@@ -193,6 +229,23 @@ window.__ModuleLoader__.load({
       const qt = react.useState(null);
       const quota = qt[0];
       const setQuota = qt[1];
+      // 本会话的 agent preset（三态：已知 agy / 已知其他 / UNKNOWN）。
+      // 恰好一条钩子通道；useSessions 的有无在同一挂载期内恒定，满足 hooks 规则。
+      let myPreset;
+      if (useSess) {
+        myPreset = useSess(function (state) { return presetOfState(state, sessionId); });
+      } else {
+        myPreset = react.useSyncExternalStore(
+          (sessionsSvc && sessionsSvc.list) ? sessionsSvc.list.subscribe : subscribeNoop,
+          function () {
+            try {
+              if (!sessionsSvc || !sessionsSvc.list) return PRESET_UNKNOWN;
+              return presetOfState(sessionsSvc.list.getSnapshot(), sessionId);
+            } catch (e) { return PRESET_UNKNOWN; }
+          });
+      }
+      const presetKnown = myPreset !== PRESET_UNKNOWN;
+      const iAmAgy = presetKnown ? isAgyPreset(myPreset) : null;
       // 弹窗打开时拉一次额度（带模块级 5 分钟缓存，避免每次打开都跑脚本）。
       react.useEffect(function () {
         if (!open) return;
@@ -235,8 +288,13 @@ window.__ModuleLoader__.load({
         return function () { window.removeEventListener("keydown", h); };
       }, [open]);
       const hasProjects = s && Array.isArray(s.projects) && s.projects.length;
-      // 非 agy 优先模式且无项目数据：不渲染（普通模式调用 agy 时才显示）。
-      if (!hasProjects && !(s && s.presetActive)) {
+      // 空转「就绪」灯的显示资格：本会话是 agy preset（cordis-agy/agy-first）。
+      // 判定不可用（UNKNOWN）时回退全局租约 s.presetActive（可能短暂显示，
+      // 快照就绪后立即收敛到本会话真实资格）。
+      const readyShow = iAmAgy === true || (iAmAgy === null && !!(s && s.presetActive));
+      // 普通模式会话（已确认不是 agy preset）：无项目数据就不渲染——
+      // 只有调用 agy 产生项目快照时才显示（按需），空闲时标题栏无灯。
+      if (!hasProjects && !readyShow) {
         return null;
       }
       const openDetail = function () { setOpen(true); };
@@ -265,9 +323,12 @@ window.__ModuleLoader__.load({
           react.createElement("span", { className: "agy-dot" }), react.createElement("span", null, text));
       }
       if (!open) return light;
+      const modeText = iAmAgy === true ? " · 本会话 agy 优先"
+        : (iAmAgy === false ? " · 普通模式"
+          : (s && s.presetActive ? " · agy 优先（其他会话）" : " · 普通模式"));
       return react.createElement(react.Fragment, null,
         light,
-        react.createElement(Popup, { s: s, quota: quota, onClose: function () { setOpen(false); } }));
+        react.createElement(Popup, { s: s, quota: quota, mode: modeText, onClose: function () { setOpen(false); } }));
     }
 
     function apply(ctx) {
@@ -278,7 +339,11 @@ window.__ModuleLoader__.load({
         const slots = scope.get("slots");
         if (slots === undefined) return;
         scope.slots.inject("conversation.session.header.utilities", function () {
-          return slots.register({ name: "conversation.session.header.utilities", id: "agy-indicator-home", order: 50 }, function () { return react.createElement(Indicator); });
+          // inject 兼容两层：新框架（≥0.3.14）以零参调用本函数、标准 props 由框架
+          // 合入（sessionId + useSessions）；旧框架以 sessionId 调用——改名
+          // injectedSessionId 避免与标准 props 冲突。sessionsSvc 两代通用（sessions
+          // 服务的 list 快照至今保留）。
+          return slots.register({ name: "conversation.session.header.utilities", id: "agy-indicator-home", order: 50, inject: function (injectedSessionId) { return { injectedSessionId: injectedSessionId, sessionsSvc: scope.get("sessions") }; } }, function (props) { return react.createElement(Indicator, props); });
         });
       });
     }

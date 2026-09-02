@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.13] - 2026
+
+### Changed
+- **额度门禁只认 5h 窗口**：单次任务的门禁判断**仅取决于 Gemini 5h 池子**（<10% → 静默 QUOTA_BLOCKED，不调 agy）。理由：5h 枯竭意味着本轮任务里 agy 确实跑不动，必须阻断；而**周用量枯竭只说明这个子代理这周不该再用**（换别的子代理或用原生工具），不是 agy 临时不可用，因此不该参与单次任务判断。
+  - 移除调用路径上的**周额度软警告**（原 v1.5.9：weekly <20% → 结果附 `[quota] 周套餐余量低…建议降低任务规模`）：preset / dynamic 两处的 `quotaWarning` 计算与拼接全部删除。
+  - 同步改写会误导模型的提示词与工具描述：`agy_quota` 描述与 systemPrompt 的 Quota guard 段明确「5h 是唯一门禁；weekly 不是单次任务门禁，绝不因周用量缩小/推迟/放弃当前任务」（preset / dynamic / MCP 三处）。
+  - 周额度信息**保留**：`agy_quota` 仍返回 weekly 桶，家级灯弹窗仍显示周余量——只做展示，不做门禁。
+  - MCP server 的调用路径本就只有 5h 阻断（无周门禁），本次只修正其 `agy_quota` 描述文案。
+
+### Added
+- **agy MCP 全局注入**：家级 `cordis.patch.yml` 注册 `mcp-agy-global`（`@deepseek-ai/dsh-mcp-client` + `bin/agy-mcp-server.mjs`），工具落在 tools registry 的 **global 层** → **所有 preset（标准/极简/创造等）都能看到并调用 `mcp__agy__agy_run|agy_continue|agy_status`**；agy 优先模式仍以原生 `agy_run`（带策略提示词、回退弹窗）为首选。
+  - 相应移除 preset 层重复的 `mcp-agy` 行（cordis-agy / cordis-web-search），避免同一 server 被拉起两份。
+- **MCP 通道点灯（跨进程桥）**：`agy-mcp-server.mjs` 每次状态变化（running / step_update / ok / failed）把 per-project 快照写盘到 `<dsh-home>/plugins/agy-indicator/mcp-live.json`（`AGY_MCP_LIVE_FILE` 可覆盖）；家级灯 `index.mjs` 在 `/agy-indicator/status` 里读盘合并（400ms 节流）。此前 MCP server 是独立 stdio 子进程、无 `ctx.emit` 也拿不到 `agyCollector`，**走 `mcp__agy__*` 的调用完全不点灯**。
+  - 字段在写盘时对齐 `mergeSnapshot`（`lastStatus`/`lastAt`/`lastConversationId`，ISO → epoch ms；否则 `Number(ISO)=NaN` 会回退 `Date.now()`，导致 ok 永不过期）。
+
+### Fixed
+- **调用结束后状态灯不消失（跨会话常驻）**：家级灯的 `OK_HOLD_MS` 原为 `presetActive ? 10min : 8s`，而 `presetActive` 是**全局心跳租约**——只要有任一 agy preset 会话在线，**所有**会话（含普通模式）的 ok 结果都被保留 10 分钟；项目表又是全局共享的，删除当前会话也不清空。现统一为 ok/failed **8s**、idle 10s，running/回退期间恒保留。agy 优先会话的常驻「就绪」灯由 client 端按本会话 preset 判定（readyShow）提供，不依赖旧 ok 项目滞留。
+
 ## [1.5.12] - 2026
 
 ### Fixed
