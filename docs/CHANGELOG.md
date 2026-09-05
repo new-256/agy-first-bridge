@@ -3,6 +3,20 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.14] - 2026
+
+### Fixed
+- **非 SUCCESS 结束后状态灯永久冻结（灯假 running、agy_status 投毒）**：`globalStatus()` 的聚合状态表达式原写作 `lastStatus === 'SUCCESS' || lastOk`，其中 `lastOk` 是**未声明的裸标识符**（本意是各项目 `p.lastOk` 的聚合，但循环里从未提取过）。任何一次以非 SUCCESS 结束（PARSE_ERROR / FAILED / agy 进程中途暴毙没有最终 result 行）且不处于回退弹窗时，聚合计算必然抛 `ReferenceError: lastOk is not defined`：
+  - `agy_status` 工具直接报「lastOk is not defined」；
+  - 状态灯的 `publish()` 把异常静默吞掉 → 灯永远冻结在最后一次成功发布的 "running" 快照上，看起来 agy 一直在跑（实测：QQ 任务 23:20 已死，灯又"跑"了 1.5 小时）。
+  - 修复与 codebuddy-core v1.1.0 的同款整改一致：聚合状态只看 `lastStatus === 'SUCCESS'`（删除 `|| lastOk`）。项目对象上的 `p.lastOk` 字段本身保留（声明 + 赋值合法）。
+  - 修复位置：preset（部署 cordis-agy 已由诊断会话修复，仓库本版同步）＋ `dynamic/host.js`；部署侧本机 `cordis-web-search` 旧版桥一并修复。MCP server、家级灯 index/client、agy-coding 桥无此代码路径（逐副本排查确认干净）。
+  - 验证：隔离复现旧表达式抛 `ReferenceError: lastOk is not defined`；修复后同场景 `state='failed'` 正常传播；全盘扫描（`.dsh` 与 `DSH Desktop` 两处 preset 根 + 仓库）无执行代码级 `|| lastOk` 残留。
+
+### Notes
+- 需**重启 DSH** 生效（preset 模块在进程内缓存；重启同时加载 v1.5.13 的 5h 门禁与灯留存改动）。
+- 遗留隐患（本版未处理，记录在案）：`askFallback()` 在限流/网络失败时弹回退对话框并**无限等待**——bot-gateway 这类远程会话无人能点，未来一次网络抖动可能让 QQ 任务真卡死；建议给远程会话加超时或把问题转发到 QQ。另：QQ 会话收到 PARSE_ERROR 后自身沉默（turn 未收尾）是独立一层问题，待查。
+
 ## [1.5.13] - 2026
 
 ### Changed

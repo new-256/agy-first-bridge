@@ -177,7 +177,13 @@ export function apply(ctx) {
     }
     trail.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
     trail = trail.slice(-MAX_TRAIL)
-    const state = running > 0 ? 'running' : (fallbackActive ? 'fallback' : (lastStatus ? (lastStatus === 'SUCCESS' || lastOk ? 'ok' : 'failed') : 'idle'))
+    // v1.5.14 修复：这里原写作 `lastStatus === 'SUCCESS' || lastOk`，而 lastOk 是
+    // 未声明的裸标识符（应为 p.lastOk 的聚合，但循环里从未提取）。任何一次非
+    // SUCCESS 结束后（running=0、无回退、lastStatus 非空）计算聚合状态必然抛
+    // ReferenceError：agy_status 工具直接报「lastOk is not defined」，publish()
+    // 又把它静默吞掉 → 状态灯永远冻结在最后一次成功发布的快照（看起来 agy
+    // 一直还在跑）。与 codebuddy-core v1.1.0 的同款整改保持一致：只看 lastStatus。
+    const state = running > 0 ? 'running' : (fallbackActive ? 'fallback' : (lastStatus ? (lastStatus === 'SUCCESS' ? 'ok' : 'failed') : 'idle'))
     return { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, current, trail, updatedAt }
   }
   function statusSnapshot() {

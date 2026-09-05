@@ -131,7 +131,11 @@ return {
       }
       trail.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
       trail = trail.slice(-MAX_TRAIL)
-      const state = running > 0 ? 'running' : (fallbackActive ? 'fallback' : (lastStatus ? (lastStatus === 'SUCCESS' || lastOk ? 'ok' : 'failed') : 'idle'))
+      // v1.5.14 修复：原 `lastStatus === 'SUCCESS' || lastOk` 里 lastOk 是未声明的
+      // 裸标识符（应为 p.lastOk 的聚合，循环里从未提取）→ 非成功结束计算聚合状态
+      // 必抛 ReferenceError 且被吞，状态灯冻结在旧快照。同 codebuddy-core v1.1.0
+      // 整改：只看 lastStatus。
+      const state = running > 0 ? 'running' : (fallbackActive ? 'fallback' : (lastStatus ? (lastStatus === 'SUCCESS' ? 'ok' : 'failed') : 'idle'))
       return { state, running, lastStatus, lastAt, lastConversationId, fallbackActive, current, trail, updatedAt }
     }
     function snapshot() {
