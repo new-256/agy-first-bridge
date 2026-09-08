@@ -38,9 +38,9 @@
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
-## 经 npm 安装（v1.5.15+）
+## 经 npm 安装（v1.6.0+）
 
-本包发布在 npm（`agy-first-bridge`，零运行时依赖），各形态均可从 npm 分发物获取：
+本包发布在 npm（`agy-first-bridge`，零运行时依赖），**全套组件（连通器 + 灯 + MCP + 动态插件）单包分发**：
 
 ```powershell
 npm install -g agy-first-bridge
@@ -57,7 +57,11 @@ npm install -g agy-first-bridge
   $env:AGY_QUOTA_SCRIPT = "<npm包路径>\bin\agy-quota.mjs"
   ```
   （不设置时门禁静默跳过，限流仍有回退弹窗兜底。）
-- **家级状态灯**：复制 `node_modules/agy-first-bridge/home-plugin/agy-indicator/`，其余同方式 B。
+- **家级状态灯（标准安装，v1.6.0 起并入主包）**：
+  ```powershell
+  dsh plugin --profile web add agy-first-bridge
+  ```
+  主包 `package.json` 自带 DSH 插件面（`main` → 灯 Host 半、`exports` 双面、`dsh.bundle.patch` → 包内 `home-plugin/agy-indicator/cordis.patch.yml`），安装后 bundle 层自动挂载灯。独立 npm 包 `agy-indicator` 自 v1.6.0 起**弃用留档**（不再更新），旧式安装（复制目录 + junction + 用户层裸包名 `agy-indicator`）仍受支持。
 
 > preset 组合遵循 DSH 0.1.3-alpha.2+ 的 `dsh-persona` 校验（`config.prefix` 必填 + `config.suffix` 可选）；更早版本同样兼容。
 
@@ -85,9 +89,9 @@ Copy-Item -Recurse .\preset\agy-first "$env:DSH_HOME\.agent-presets\agy-first"
 
 ### 方式 B：安装家级状态灯插件（随软件启动、所有会话可见）
 
-状态灯插件是**标准 npm 包形态**（对齐官方 `dsh-comfyui-bridge` 模式）：包 `package.json` 的 `main` → `lib/index.mjs`（Host 半入口）、`exports["./client"]` → `lib/client.js`（浏览器半）、`dsh.bundle.patch` → 包内 `cordis.patch.yml`（bundle 补丁层，安装后自动挂载通用默认行）。Host 行用**裸包名**注册，Client 半靠 `dsh.client` 声明被宿主 client-modules 自动纳入浏览器花名册——**无需单独 client 行**。
+**v1.6.0 起灯并入主包**：主包 `agy-first-bridge` 的 `package.json` 自带 DSH 插件面——`main` → `home-plugin/agy-indicator/lib/index.mjs`（Host 半入口）、`exports["./client"]` → 灯 `client.js`（浏览器半）、`dsh.bundle.patch` → 包内 `cordis.patch.yml`（bundle 补丁层，安装后自动挂载）。Host 行用**裸包名**注册，Client 半靠 `dsh.client` 声明被宿主 client-modules 自动纳入浏览器花名册——**无需单独 client 行**。独立 npm 包 `agy-indicator` 弃用留档。
 
-**本机部署**（junction 直连源码目录，改动即热载）：
+**本机开发部署**（junction 直连源码目录，改动即热载）：
 
 ```powershell
 # 1) 复制插件源码
@@ -104,13 +108,13 @@ New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator"
 #          name: agy-indicator
 ```
 
-**跨设备分发**（npm 安装，标准形态）：
+**跨设备分发**（npm 安装主包，标准形态）：
 
 ```powershell
-dsh plugin --profile web add agy-indicator
+dsh plugin --profile web add agy-first-bridge
 ```
 
-包内 `cordis.patch.yml`（bundle 层）自带通用默认行；机器特定配置写到用户层 `cordis.patch.yml` 的同 id 行（后应用、整体覆盖）。
+主包内 `home-plugin/agy-indicator/cordis.patch.yml`（bundle 层）自带通用默认行；机器特定配置写到用户层 `cordis.patch.yml` 的同 id 行（后应用、整体覆盖）。旧式 `dsh plugin --profile web add agy-indicator`（独立包）仍可用于已安装旧版的环境，但包不再更新。
 
 配合 **preset 形态**（方式 A）使用：preset 里的 `agy-first-bridge.mjs` 每次状态变化会 `ctx.emit('agy/status')` 推送到家级收集器，灯随之实时更新；改 `lib/client.js` 后刷新浏览器即生效。Host 半源码（`lib/index.mjs`）改动后需重启 DSH 生效；开发期可把 name 临时改成 `agy-indicator?v=N` 触发热重载（DSH HMR 监听 patch 文件，URL 变化即重新 import），改完一轮后恢复裸包名。
 
@@ -207,6 +211,7 @@ agy-first-bridge/
 
 | 版本 | 适配 DSH | 内容 |
 | --- | --- | --- |
+| [v1.6.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.0) | 0.1.3-alpha.2 | **双包合一**：灯并入主包 `agy-first-bridge`（主包 `package.json` 增加 DSH 插件面——`main` → 灯 Host 半、`exports` 双面、`dsh.bundle.patch`；`dsh plugin --profile web add agy-first-bridge` 单命令装灯），独立 npm 包 `agy-indicator` 弃用留档 |
 | [v1.5.15](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.15) | 0.1.3-alpha.2 | **适配 dsh-persona 新校验**（DSH 0.1.3-alpha.2 起 `prefix` 必填；旧 `text:` 拒绝挂载 → 迁移为 `prefix`+`suffix`，原文语义逐字保留）＋ **npm 发布**（去 `private`、加 `bin`/`files`/provenance，`agy-mcp-server` 可 `npx`）＋ `AGY_QUOTA_SCRIPT` 环境变量覆盖额度脚本路径（npm 安装布局自适配）＋ **agry-indicator 标准 npm 包形态**（`main` → `lib/index.mjs` Host 半、`exports` 双面暴露、`dsh.bundle.patch` bundle 补丁层；host 行改裸包名 `agy-indicator`，对齐官方 `dsh-comfyui-bridge`，跨设备 `dsh plugin --profile web add agy-indicator`） |
 | [v1.5.14](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.14) | 0.1.2-alpha.5 | **修复状态灯永久冻结**：聚合状态表达式里的裸变量 `lastOk`（未声明 → 非 SUCCESS 结束必抛被吞的 ReferenceError）——灯冻结在旧 "running" 快照、agy_status 报「lastOk is not defined」；同 codebuddy-core v1.1.0 整改只看 `lastStatus`，preset/dynamic/web-search 桥三处同修 |
 | [v1.5.13](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.13) | 0.1.2-alpha.5 | **agy MCP 全局注入**（家级 patch 注册 → 所有 preset 都能调 `mcp__agy__*`）＋ **MCP 通道点灯**（server 写盘 `mcp-live.json`，家级灯读盘合并）＋ **额度门禁只认 5h**（移除周额度软警告与相关提示词；周用量不再参与单次任务判断）＋ 修复调用结束后状态灯跨会话常驻（`OK_HOLD_MS` 不再随全局租约放大到 10 分钟） |

@@ -38,9 +38,9 @@ The same logic ships in four forms; pick per need:
 
 See [docs/en/ARCHITECTURE.md](docs/en/ARCHITECTURE.md).
 
-## Install via npm (v1.5.15+)
+## Install via npm (v1.6.0+)
 
-The package is published on npm (`agy-first-bridge`, zero runtime dependencies); every form can be sourced from the npm artifact:
+The package is published on npm (`agy-first-bridge`, zero runtime dependencies); **the whole suite (bridge + status light + MCP + dynamic plugin) ships in this single package**:
 
 ```powershell
 npm install -g agy-first-bridge
@@ -57,7 +57,11 @@ npm install -g agy-first-bridge
   $env:AGY_QUOTA_SCRIPT = "<npm-package-path>\bin\agy-quota.mjs"
   ```
   (Without it the gate silently skips; rate-limit fallback still catches issues at runtime.)
-- **Home-level status light**: copy `node_modules/agy-first-bridge/home-plugin/agy-indicator/` and continue as in Option B.
+- **Home-level status light (standard install, merged into the main package since v1.6.0)**:
+  ```powershell
+  dsh plugin --profile web add agy-first-bridge
+  ```
+  The main package's `package.json` carries the DSH plugin face (`main` → light Host half, dual `exports`, `dsh.bundle.patch` → in-package `home-plugin/agy-indicator/cordis.patch.yml`); the bundle layer auto-mounts the light on install. The standalone npm package `agy-indicator` is **deprecated/archived since v1.6.0** (no further updates); the legacy install form (copy directory + junction + user-layer bare name `agy-indicator`) remains supported.
 
 > The preset composition follows the `dsh-persona` validation of DSH 0.1.3-alpha.2+ (`config.prefix` required + `config.suffix` optional); earlier versions remain compatible.
 
@@ -85,9 +89,9 @@ Full steps and validation are in [docs/en/INSTALL.md](docs/en/INSTALL.md).
 
 ### Option B: install the home-level status-light plugin (start-up persistent, every session)
 
-The status-light plugin is a **standard npm package** (mirroring the official `dsh-comfyui-bridge` pattern): `package.json`'s `main` → `lib/index.mjs` (Host half entry), `exports["./client"]` → `lib/client.js` (browser half), and `dsh.bundle.patch` → in-package `cordis.patch.yml` (bundle layer that auto-mounts generic defaults on install). The Host row registers the **bare package name**; the Client half is auto-admitted to the browser roster by the `dsh.client` declaration — **no separate client row needed**.
+**Since v1.6.0 the light is merged into the main package**: `agy-first-bridge`'s `package.json` carries the DSH plugin face — `main` → `home-plugin/agy-indicator/lib/index.mjs` (Host half entry), `exports["./client"]` → the light's `client.js` (browser half), `dsh.bundle.patch` → in-package `cordis.patch.yml` (bundle layer auto-mounted on install). The Host row registers the **bare package name**; the Client half is auto-admitted to the browser roster by the `dsh.client` declaration — **no separate client row needed**. The standalone npm package `agy-indicator` is deprecated/archived.
 
-**Local deployment** (junctions point straight at the source, changes apply live):
+**Local development deployment** (junctions point straight at the source, changes apply live):
 
 ```powershell
 # 1) copy the plugin source
@@ -104,13 +108,13 @@ New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator"
 #          name: agy-indicator
 ```
 
-**Cross-device distribution** (npm install, the standard form):
+**Cross-device distribution** (npm install of the main package, the standard form):
 
 ```powershell
-dsh plugin --profile web add agy-indicator
+dsh plugin --profile web add agy-first-bridge
 ```
 
-The in-package `cordis.patch.yml` (bundle layer) carries generic defaults; machine-specific config goes into the user-layer `cordis.patch.yml` under the same id (applied later, overrides wholesale).
+The in-package `home-plugin/agy-indicator/cordis.patch.yml` (bundle layer) carries generic defaults; machine-specific config goes into the user-layer `cordis.patch.yml` under the same id (applied later, overrides wholesale). The legacy `dsh plugin --profile web add agy-indicator` (standalone package) still works for environments that already installed the old version, but the package is no longer updated.
 
 Pair it with the **preset form** (Option A): the preset's `agy-first-bridge.mjs` emits `ctx.emit('agy/status')` on every state change, which the home-level collector merges and the light renders. After editing `lib/client.js`, refresh the browser. Host-half source (`lib/index.mjs`) changes need a DSH restart to take effect; during development you may temporarily set the name to `agy-indicator?v=N` to hot-reload (DSH HMR watches the patch file and re-imports on URL change), then restore the bare name once the round of edits is done.
 
@@ -188,6 +192,7 @@ Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/C
 
 | Version | DSH | Highlights |
 | --- | --- | --- |
+| [v1.6.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.0) | 0.1.3-alpha.2 | **Single-package merge**: the status light is merged into the main package `agy-first-bridge` (main `package.json` gains the DSH plugin face — `main` → light Host half, dual `exports`, `dsh.bundle.patch`; `dsh plugin --profile web add agy-first-bridge` installs the light in one command); the standalone npm package `agy-indicator` is deprecated/archived |
 | [v1.5.15](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.15) | 0.1.3-alpha.2 | **Adapt to the new dsh-persona validation** (DSH 0.1.3-alpha.2+ requires `prefix`; the old `text:` field is rejected at mount → migrated to `prefix`+`suffix`, original semantics preserved verbatim) + **npm publish** (`private` removed, `bin`/`files`/provenance added, `agy-mcp-server` runnable via `npx`) + `AGY_QUOTA_SCRIPT` env override for the quota script path (adapts to npm install layouts) + **agy-indicator as a standard npm package** (`main` → `lib/index.mjs` Host half, dual-exposed `exports`, `dsh.bundle.patch` bundle layer; host row switched to bare name `agy-indicator`, mirroring official `dsh-comfyui-bridge`, cross-device via `dsh plugin --profile web add agy-indicator`) |
 | [v1.5.14](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.14) | 0.1.2-alpha.5 | **Fix status light freezing forever**: the aggregate-state expression referenced an undeclared bare `lastOk` (any non-SUCCESS ending threw a silently swallowed ReferenceError) — the light froze on a stale "running" snapshot and agy_status reported "lastOk is not defined"; aligned with codebuddy-core v1.1.0, the aggregate now only checks `lastStatus`; fixed in preset, dynamic, and the local web-search bridge |
 | [v1.5.13](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.13) | 0.1.2-alpha.5 | **Global agy MCP injection** (home patch registration makes `mcp__agy__*` visible in every preset) + **MCP status light bridge** (server persists `mcp-live.json`, home indicator merges it) + **5h-only quota gate** (weekly soft warning and related policy text removed from the call path; weekly usage never gates a single task) + fixed completed status lights persisting across sessions (`OK_HOLD_MS` no longer expands to 10 minutes under the global preset lease) |

@@ -1,7 +1,7 @@
 {
   "name": "agy-indicator",
-  "description": "agy 状态灯（家级）：收集各会话 agy-first-bridge 推送的 agy 运行状态，经 webServer HTTP 路由暴露给浏览器，在会话标题栏按项目（工作目录）分别显示状态灯。随软件启动、所有会话自动可见。标准 npm 分发形态：host 半用裸包名（main → lib/index.mjs），client 半靠 dsh.client 声明自动纳入浏览器。",
-  "version": "1.5.15",
+  "description": "agy 状态灯（家级）：收集各会话 agy-first-bridge 推送的 agy 运行状态，经 webServer HTTP 路由暴露给浏览器，在会话标题栏按项目（工作目录）分别显示状态灯。随软件启动、所有会话自动可见。【弃用留档】独立 npm 包自 v1.6.0 起弃用——灯已并入主包 agy-first-bridge（dsh.bundle.patch 指向本目录 cordis.patch.yml，dsh plugin --profile web add agy-first-bridge 直接安装）。",
+  "version": "1.6.0",
   "type": "module",
   "main": "./lib/index.mjs",
   "exports": {

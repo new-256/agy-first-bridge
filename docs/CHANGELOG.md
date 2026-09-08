@@ -3,6 +3,20 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.6.0] - 2026
+
+### Changed
+- **双包合一：灯并入主包 `agy-first-bridge`**。主包 `package.json` 增加 DSH 插件面——`main` → `./home-plugin/agy-indicator/lib/index.mjs`（灯 Host 半）、`exports` 双面暴露（`.` → host、`./client` → 灯浏览器半）、`dsh.bundle.patch` → 包内 `home-plugin/agy-indicator/cordis.patch.yml`。跨设备安装灯变为单命令：`dsh plugin --profile web add agy-first-bridge`（bundle 层自动挂载，与官方 `dsh-comfyui-bridge` 同模式）。
+- **独立 npm 包 `agy-indicator` 弃用留档**：自 v1.6.0 起不再更新，npm 已发布版本保留不删（无法删除）。主包内 `home-plugin/agy-indicator/package.json` 描述标注弃用；旧式安装（复制目录 + junction + 用户层裸包名 `agy-indicator`）仍受支持——用户层同 id 行后应用、整体覆盖 bundle 层，本机部署形态不变。
+- **包内 bundle 层行 name 改为 `agy-first-bridge`**：远程设备 `dsh plugin --profile web add agy-first-bridge` 时，裸包名解析到主包（main → 灯 host 半）；本机用户层 `agy-indicator`（junction 直连）不受影响。
+
+### Added
+- 主包 README 中英「经 npm 安装」章节更新为全套组件单包分发说明；方式 B 增加标准安装（`dsh plugin --profile web add agy-first-bridge`）与弃用说明。
+
+### Notes
+- 灯组件在分发物中的位置不变（`home-plugin/agy-indicator/`，含 `lib/` 3 文件 + `cordis.patch.yml` + `package.json`），主包 `files` 已含 `home-plugin/`，`npm pack` 后 tarball 结构与内容保持全套（preset + 灯 + MCP + 动态 + bin）。
+- 兼容性：v1.5.15 已安装 `agy-indicator` 独立包的环境无需迁移，旧版继续可用；新环境统一走主包。
+
 ## [1.5.15] - 2026
 
 ### Changed
