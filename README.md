@@ -38,6 +38,29 @@
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
+## 经 npm 安装（v1.5.15+）
+
+本包发布在 npm（`agy-first-bridge`，零运行时依赖），各形态均可从 npm 分发物获取：
+
+```powershell
+npm install -g agy-first-bridge
+# 或仅本地安装：npm install agy-first-bridge
+```
+
+- **MCP 服务器**：全局安装后直接用 bin —— `agy-mcp-server`（或免安装 `npx agy-first-bridge` 的 bin）：
+  ```bash
+  claude mcp add agy -- agy-mcp-server
+  ```
+- **Agent Preset**：把 `node_modules/agy-first-bridge/preset/agy-first/`（全局安装则在 npm 全局目录下）复制到 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/agy-first/`，与方式 A 相同。
+- **额度门禁脚本**：preset 被复制出包目录后，设置环境变量让 5h 门禁继续生效：
+  ```powershell
+  $env:AGY_QUOTA_SCRIPT = "<npm包路径>\bin\agy-quota.mjs"
+  ```
+  （不设置时门禁静默跳过，限流仍有回退弹窗兜底。）
+- **家级状态灯**：复制 `node_modules/agy-first-bridge/home-plugin/agy-indicator/`，其余同方式 B。
+
+> preset 组合遵循 DSH 0.1.3-alpha.2+ 的 `dsh-persona` 校验（`config.prefix` 必填 + `config.suffix` 可选）；更早版本同样兼容。
+
 ## 快速开始
 
 ### 方式 A：作为持久 Agent Preset 安装（推荐）
@@ -93,7 +116,10 @@ New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator"
 不需要 DSH 时，把 [`mcp/agy-mcp-server.mjs`](mcp/agy-mcp-server.mjs) 注册为 MCP 服务器，Claude Code / Codex / Cherry Studio 等宿主即可通过 `tools/list` 自动发现 `agy_run` / `agy_continue` / `agy_status` 并自主决定调用：
 
 ```bash
-# Claude Code 示例
+# Claude Code 示例（npm 安装后可直接用 bin）
+claude mcp add agy -- agy-mcp-server
+# 或免安装 npx / 本仓库开发环境
+claude mcp add agy -- npx -y agy-first-bridge
 claude mcp add agy -- node "C:\Users\lcl\Desktop\agy-first-bridge\mcp\agy-mcp-server.mjs"
 ```
 
@@ -174,6 +200,7 @@ agy-first-bridge/
 
 | 版本 | 适配 DSH | 内容 |
 | --- | --- | --- |
+| [v1.5.15](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.15) | 0.1.3-alpha.2 | **适配 dsh-persona 新校验**（DSH 0.1.3-alpha.2 起 `prefix` 必填；旧 `text:` 拒绝挂载 → 迁移为 `prefix`+`suffix`，原文语义逐字保留）＋ **npm 发布**（去 `private`、加 `bin`/`files`/provenance，`agy-mcp-server` 可 `npx`）＋ `AGY_QUOTA_SCRIPT` 环境变量覆盖额度脚本路径（npm 安装布局自适配） |
 | [v1.5.14](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.14) | 0.1.2-alpha.5 | **修复状态灯永久冻结**：聚合状态表达式里的裸变量 `lastOk`（未声明 → 非 SUCCESS 结束必抛被吞的 ReferenceError）——灯冻结在旧 "running" 快照、agy_status 报「lastOk is not defined」；同 codebuddy-core v1.1.0 整改只看 `lastStatus`，preset/dynamic/web-search 桥三处同修 |
 | [v1.5.13](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.13) | 0.1.2-alpha.5 | **agy MCP 全局注入**（家级 patch 注册 → 所有 preset 都能调 `mcp__agy__*`）＋ **MCP 通道点灯**（server 写盘 `mcp-live.json`，家级灯读盘合并）＋ **额度门禁只认 5h**（移除周额度软警告与相关提示词；周用量不再参与单次任务判断）＋ 修复调用结束后状态灯跨会话常驻（`OK_HOLD_MS` 不再随全局租约放大到 10 分钟） |
 | [v1.5.12](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.12) | 0.1.2-alpha.4 | **修复 agy_quota 在含空格路径（DSH Desktop）下恒失败**：`new URL().pathname` 的 `%20` 编码无法还原 → 改用 `fileURLToPath` + 脚本缺失 fallback + 报错带退出码/stderr；preset 与 MCP 同修 |

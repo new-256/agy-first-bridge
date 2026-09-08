@@ -1,24 +1,37 @@
 {
   "name": "agy-first-bridge",
-  "version": "1.5.14",
-  "private": true,
+  "version": "1.5.15",
   "description": "agy-first bridge for DeepSeek Harness (DSH): prioritize the local agy CLI in every mode (full DSH control, no prompts), with a rate-limit/network fallback dialog, a live status light (dynamic form + home-level plugin), and a zero-dependency MCP server so any MCP-capable agent (Claude Code / Codex / Cherry Studio …) discovers agy itself.",
   "license": "MIT",
   "engines": {
     "node": ">=18"
   },
+  "bin": {
+    "agy-mcp-server": "mcp/agy-mcp-server.mjs"
+  },
   "files": [
     "preset/",
     "home-plugin/",
     "dynamic/",
-    "mcp/"
+    "mcp/",
+    "bin/"
   ],
   "keywords": [
     "dsh",
     "cordis",
     "agy",
     "mcp",
+    "mcp-server",
     "agent",
-    "deepseek-harness"
-  ]
+    "deepseek-harness",
+    "gemini"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/new-256/agy-first-bridge.git"
+  },
+  "homepage": "https://github.com/new-256/agy-first-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/new-256/agy-first-bridge/issues"
+  }
 }

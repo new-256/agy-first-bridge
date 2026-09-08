@@ -21,11 +21,16 @@
 
 # The preset's own persona, shadowing the deployment default for this agent.
 # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+# v1.5.15: dsh-persona (DSH 0.1.3-alpha.2+) validates `prefix` (required) +
+# `suffix` (optional); the old single `text:` field is rejected with
+# "invalid config: - $.prefix missing required value". The former text is split
+# verbatim into prefix + suffix.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+    prefix: >-
+      You are a coding agent powered by the {{model}} model.
+    suffix: Your working directory is {{cwd}}.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

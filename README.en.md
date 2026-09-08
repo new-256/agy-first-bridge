@@ -38,6 +38,29 @@ The same logic ships in four forms; pick per need:
 
 See [docs/en/ARCHITECTURE.md](docs/en/ARCHITECTURE.md).
 
+## Install via npm (v1.5.15+)
+
+The package is published on npm (`agy-first-bridge`, zero runtime dependencies); every form can be sourced from the npm artifact:
+
+```powershell
+npm install -g agy-first-bridge
+# or locally: npm install agy-first-bridge
+```
+
+- **MCP server**: after a global install the bin is directly usable — `agy-mcp-server` (or `npx -y agy-first-bridge` without installing):
+  ```bash
+  claude mcp add agy -- agy-mcp-server
+  ```
+- **Agent preset**: copy `node_modules/agy-first-bridge/preset/agy-first/` (under the npm global directory for global installs) to `${DSH_HOME:-$HOME/.dsh}/.agent-presets/agy-first/`, same as Option A.
+- **Quota gate script**: once the preset is copied out of the package directory, point the environment variable at the script to keep the 5h gate alive:
+  ```powershell
+  $env:AGY_QUOTA_SCRIPT = "<npm-package-path>\bin\agy-quota.mjs"
+  ```
+  (Without it the gate silently skips; rate-limit fallback still catches issues at runtime.)
+- **Home-level status light**: copy `node_modules/agy-first-bridge/home-plugin/agy-indicator/` and continue as in Option B.
+
+> The preset composition follows the `dsh-persona` validation of DSH 0.1.3-alpha.2+ (`config.prefix` required + `config.suffix` optional); earlier versions remain compatible.
+
 ## Quick start
 
 ### Option A: install as a persistent agent preset (recommended)
@@ -158,6 +181,7 @@ Semantic versioning via `package.json` + Git tags + GitHub Releases (see [docs/C
 
 | Version | DSH | Highlights |
 | --- | --- | --- |
+| [v1.5.15](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.15) | 0.1.3-alpha.2 | **Adapt to the new dsh-persona validation** (DSH 0.1.3-alpha.2+ requires `prefix`; the old `text:` field is rejected at mount → migrated to `prefix`+`suffix`, original semantics preserved verbatim) + **npm publish** (`private` removed, `bin`/`files`/provenance added, `agy-mcp-server` runnable via `npx`) + `AGY_QUOTA_SCRIPT` env override for the quota script path (adapts to npm install layouts) |
 | [v1.5.14](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.14) | 0.1.2-alpha.5 | **Fix status light freezing forever**: the aggregate-state expression referenced an undeclared bare `lastOk` (any non-SUCCESS ending threw a silently swallowed ReferenceError) — the light froze on a stale "running" snapshot and agy_status reported "lastOk is not defined"; aligned with codebuddy-core v1.1.0, the aggregate now only checks `lastStatus`; fixed in preset, dynamic, and the local web-search bridge |
 | [v1.5.13](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.13) | 0.1.2-alpha.5 | **Global agy MCP injection** (home patch registration makes `mcp__agy__*` visible in every preset) + **MCP status light bridge** (server persists `mcp-live.json`, home indicator merges it) + **5h-only quota gate** (weekly soft warning and related policy text removed from the call path; weekly usage never gates a single task) + fixed completed status lights persisting across sessions (`OK_HOLD_MS` no longer expands to 10 minutes under the global preset lease) |
 | [v1.5.12](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.12) | 0.1.2-alpha.4 | **Fix agy_quota failing on paths containing spaces** (`DSH Desktop`): `new URL().pathname` percent-encodes spaces (`%20`) that the drive-letter regex cannot restore → switched to `fileURLToPath()` + fallback script path + exit-code/stderr in errors; fixed in both preset and MCP |

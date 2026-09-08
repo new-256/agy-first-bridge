@@ -597,8 +597,13 @@ export function apply(ctx) {
     // fileURLToPath 而非 .pathname：路径含空格（"DSH Desktop"）时 .pathname
     // 会给出百分号编码（%20），且对盘符的 ^\/([A-Za-z]:) 正则只剥前导斜杠、
     // 保留 %20，导致脚本永远打不开 → agy_quota 恒报 no JSON output。
-    let scriptPath = fileURLToPath(new URL('../../bin/agy-quota.mjs', import.meta.url))
-    if (!existsSync(scriptPath)) {
+    // 解析顺序：AGY_QUOTA_SCRIPT 环境变量（npm 安装/自定义布局）→ 相对本模块
+    // 向上两级的 bin（仓库内布局）→ QUOTA_FALLBACK_SCRIPTS（本机绝对路径）。
+    const envScript = process.env.AGY_QUOTA_SCRIPT
+    let scriptPath = envScript && existsSync(envScript)
+      ? envScript
+      : fileURLToPath(new URL('../../bin/agy-quota.mjs', import.meta.url))
+    if (!scriptPath || !existsSync(scriptPath)) {
       for (const f of QUOTA_FALLBACK_SCRIPTS) { if (existsSync(f)) { scriptPath = f; break } }
     }
     const node = process.execPath || 'node'

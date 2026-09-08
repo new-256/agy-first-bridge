@@ -3,6 +3,28 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.15] - 2026
+
+### Changed
+- **适配 `dsh-persona` 新校验（DSH 0.1.3-alpha.2+）**：DSH 后端自动更新后，`@deepseek-ai/dsh-persona` 将配置校验升级为 `prefix: z.string().required()`（另有 `suffix`/`complete`/`includeRuntimeContext` 均带默认值）。preset 组合里的旧写法 `config: { text: ... }` 被 Schemastery 直接拒绝挂载，恢复会话报 `invalid config: - $.prefix missing required value`。本仓库 preset 的 persona 行迁移为：
+  ```yaml
+  config:
+    prefix: >-
+      You are a coding agent powered by the {{model}} model.
+    suffix: Your working directory is {{cwd}}.
+  ```
+  原单句 `text` 逐字拆分为 prefix + suffix，语义不变（与部署侧 cordis-agy / codebuddy-first / agy-coding 的迁移写法一致）。部署侧两个 preset 根的迁移由修复会话完成，本版将同款结构落进仓库交付物。
+
+### Added
+- **npm 发布就绪**：`package.json` 移除 `private`，新增 `bin`（`agy-mcp-server` → `mcp/agy-mcp-server.mjs`，文件本就带 shebang，支持 `npx -y agy-first-bridge`）、`repository`/`homepage`/`bugs` provenance；`files` 补入 `bin/`（`agy-quota.mjs` 是 preset 桥与 MCP server 的额度门禁依赖）。名称 `agy-first-bridge` 在 npm 上可用（404）。
+- **`AGY_QUOTA_SCRIPT` 环境变量**（preset 桥 + MCP server）：额度脚本解析顺序变为 env 覆盖 → 相对包内 `bin/` → 本机绝对路径 fallback。preset 从 npm 包复制进 `.agent-presets/` 后相对路径会断，此前只能靠硬编码的本机路径；现在设 `AGY_QUOTA_SCRIPT` 即可让 5h 门禁在任意安装布局下继续生效（不设置则静默跳过，运行时限流仍有回退兜底）。MCP server 原有 `AGY_MCP_LIVE_FILE` 不变。
+- README 中英双语新增「经 npm 安装」章节；方式 D 补充 `agy-mcp-server` bin / `npx` 用法。
+
+### Notes
+- 兼容性：persona 新写法对更早的 DSH 版本同样合法（`text` 从未是 schema 的正式字段，旧版只是宽松忽略未知键）。
+- 环境备注：本机默认 registry 为 npmmirror，发布需显式 `--registry https://registry.npmjs.org`（用户级 .npmrc 已有官方 registry token）。
+- 部署侧 `cordis-web-search` 旧版预设目录已被删除（修复会话清理），v1.5.14 对它的桥修复随之作废，无影响。
+
 ## [1.5.14] - 2026
 
 ### Fixed

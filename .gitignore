@@ -13,6 +13,9 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-error.log*
 
+# npm pack artifacts
+*.tgz
+
 # Local scratch
 *.log
 tmp/

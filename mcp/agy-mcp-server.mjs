@@ -446,6 +446,10 @@ function quotaScriptPath() {
   // fileURLToPath 而非 .pathname：路径含空格（"DSH Desktop"）时 .pathname
   // 会给出百分号编码（%20），且盘符正则只剥前导斜杠、保留 %20，导致脚本
   // 永远打不开 → agy_quota 恒报 no JSON output。
+  // 解析顺序：AGY_QUOTA_SCRIPT 环境变量（npm 安装/自定义布局）→ 相对本模块
+  // 上一级的 bin（npm 包/仓库内布局）→ 本机绝对路径 fallback。
+  const envScript = process.env.AGY_QUOTA_SCRIPT
+  if (envScript && existsSync(envScript)) return envScript
   const primary = fileURLToPath(new URL('../bin/agy-quota.mjs', import.meta.url))
   if (existsSync(primary)) return primary
   const fallback = 'C:\\Users\\lcl\\Desktop\\agy-first-bridge\\bin\\agy-quota.mjs'
