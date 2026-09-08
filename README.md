@@ -85,7 +85,9 @@ Copy-Item -Recurse .\preset\agy-first "$env:DSH_HOME\.agent-presets\agy-first"
 
 ### 方式 B：安装家级状态灯插件（随软件启动、所有会话可见）
 
-把 [`home-plugin/agy-indicator/`](home-plugin/agy-indicator/) 复制到 DSH 家级插件目录并注册到 `cordis.patch.yml`，状态灯即随 DSH 启动自动加载、所有会话自动显示、无需审批：
+状态灯插件是**标准 npm 包形态**（对齐官方 `dsh-comfyui-bridge` 模式）：包 `package.json` 的 `main` → `lib/index.mjs`（Host 半入口）、`exports["./client"]` → `lib/client.js`（浏览器半）、`dsh.bundle.patch` → 包内 `cordis.patch.yml`（bundle 补丁层，安装后自动挂载通用默认行）。Host 行用**裸包名**注册，Client 半靠 `dsh.client` 声明被宿主 client-modules 自动纳入浏览器花名册——**无需单独 client 行**。
+
+**本机部署**（junction 直连源码目录，改动即热载）：
 
 ```powershell
 # 1) 复制插件源码
@@ -96,16 +98,21 @@ Copy-Item -Recurse .\home-plugin\agy-indicator "$dshHome\plugins\agy-indicator"
 New-Item -ItemType Junction -Path "$dshHome\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
 New-Item -ItemType Junction -Path "$dshHome\profiles\node_modules\agy-indicator" -Target "$dshHome\plugins\agy-indicator"
 
-# 3) 在 cordis.patch.yml 末尾追加两行（HMR 自动热载，无需重启）：
+# 3) 在 cordis.patch.yml 追加 host 行（裸包名，HMR 自动热载）：
 #    - insert:
 #        - id: agy-indicator
-#          name: file:///.../plugins/agy-indicator/lib/index.mjs?v=1
-#    - insert:
-#        - id: agy-indicator-client
 #          name: agy-indicator
 ```
 
-配合 **preset 形态**（方式 A）使用：preset 里的 `agy-first-bridge.mjs` 每次状态变化会 `ctx.emit('agy/status')` 推送到家级收集器，灯随之实时更新；改 `lib/index.mjs` 后 bump `?v=N` 即热载，改 `lib/client.js` 后刷新浏览器即生效。
+**跨设备分发**（npm 安装，标准形态）：
+
+```powershell
+dsh plugin --profile web add agy-indicator
+```
+
+包内 `cordis.patch.yml`（bundle 层）自带通用默认行；机器特定配置写到用户层 `cordis.patch.yml` 的同 id 行（后应用、整体覆盖）。
+
+配合 **preset 形态**（方式 A）使用：preset 里的 `agy-first-bridge.mjs` 每次状态变化会 `ctx.emit('agy/status')` 推送到家级收集器，灯随之实时更新；改 `lib/client.js` 后刷新浏览器即生效。Host 半源码（`lib/index.mjs`）改动后需重启 DSH 生效；开发期可把 name 临时改成 `agy-indicator?v=N` 触发热重载（DSH HMR 监听 patch 文件，URL 变化即重新 import），改完一轮后恢复裸包名。
 
 ### 方式 C：作为动态 Cordis 插件运行（含状态灯）
 
@@ -164,7 +171,7 @@ agy-first-bridge/
 ├─ README.en.md
 ├─ LICENSE
 ├─ .gitignore
-├─ package.json                 # 版本元数据（v1.5.12，Node ≥18）
+├─ package.json                 # 版本元数据（v1.5.15，Node ≥18）
 ├─ MCP-POLICY.md / MCP-POLICY.zh.md   # 外部代理「披露并优先」策略（安装到 ~/.claude/CLAUDE.md 与 ~/.codex/AGENTS.md）
 ├─ .github/workflows/ci.yml     # node --check + YAML 校验（Node 18/20/22）
 ├─ assets/indicator-states.svg
@@ -200,7 +207,7 @@ agy-first-bridge/
 
 | 版本 | 适配 DSH | 内容 |
 | --- | --- | --- |
-| [v1.5.15](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.15) | 0.1.3-alpha.2 | **适配 dsh-persona 新校验**（DSH 0.1.3-alpha.2 起 `prefix` 必填；旧 `text:` 拒绝挂载 → 迁移为 `prefix`+`suffix`，原文语义逐字保留）＋ **npm 发布**（去 `private`、加 `bin`/`files`/provenance，`agy-mcp-server` 可 `npx`）＋ `AGY_QUOTA_SCRIPT` 环境变量覆盖额度脚本路径（npm 安装布局自适配） |
+| [v1.5.15](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.15) | 0.1.3-alpha.2 | **适配 dsh-persona 新校验**（DSH 0.1.3-alpha.2 起 `prefix` 必填；旧 `text:` 拒绝挂载 → 迁移为 `prefix`+`suffix`，原文语义逐字保留）＋ **npm 发布**（去 `private`、加 `bin`/`files`/provenance，`agy-mcp-server` 可 `npx`）＋ `AGY_QUOTA_SCRIPT` 环境变量覆盖额度脚本路径（npm 安装布局自适配）＋ **agry-indicator 标准 npm 包形态**（`main` → `lib/index.mjs` Host 半、`exports` 双面暴露、`dsh.bundle.patch` bundle 补丁层；host 行改裸包名 `agy-indicator`，对齐官方 `dsh-comfyui-bridge`，跨设备 `dsh plugin --profile web add agy-indicator`） |
 | [v1.5.14](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.14) | 0.1.2-alpha.5 | **修复状态灯永久冻结**：聚合状态表达式里的裸变量 `lastOk`（未声明 → 非 SUCCESS 结束必抛被吞的 ReferenceError）——灯冻结在旧 "running" 快照、agy_status 报「lastOk is not defined」；同 codebuddy-core v1.1.0 整改只看 `lastStatus`，preset/dynamic/web-search 桥三处同修 |
 | [v1.5.13](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.13) | 0.1.2-alpha.5 | **agy MCP 全局注入**（家级 patch 注册 → 所有 preset 都能调 `mcp__agy__*`）＋ **MCP 通道点灯**（server 写盘 `mcp-live.json`，家级灯读盘合并）＋ **额度门禁只认 5h**（移除周额度软警告与相关提示词；周用量不再参与单次任务判断）＋ 修复调用结束后状态灯跨会话常驻（`OK_HOLD_MS` 不再随全局租约放大到 10 分钟） |
 | [v1.5.12](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.12) | 0.1.2-alpha.4 | **修复 agy_quota 在含空格路径（DSH Desktop）下恒失败**：`new URL().pathname` 的 `%20` 编码无法还原 → 改用 `fileURLToPath` + 脚本缺失 fallback + 报错带退出码/stderr；preset 与 MCP 同修 |

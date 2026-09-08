@@ -18,7 +18,8 @@ All notable changes to this project are documented here. Format loosely follows
 ### Added
 - **npm 发布就绪**：`package.json` 移除 `private`，新增 `bin`（`agy-mcp-server` → `mcp/agy-mcp-server.mjs`，文件本就带 shebang，支持 `npx -y agy-first-bridge`）、`repository`/`homepage`/`bugs` provenance；`files` 补入 `bin/`（`agy-quota.mjs` 是 preset 桥与 MCP server 的额度门禁依赖）。名称 `agy-first-bridge` 在 npm 上可用（404）。
 - **`AGY_QUOTA_SCRIPT` 环境变量**（preset 桥 + MCP server）：额度脚本解析顺序变为 env 覆盖 → 相对包内 `bin/` → 本机绝对路径 fallback。preset 从 npm 包复制进 `.agent-presets/` 后相对路径会断，此前只能靠硬编码的本机路径；现在设 `AGY_QUOTA_SCRIPT` 即可让 5h 门禁在任意安装布局下继续生效（不设置则静默跳过，运行时限流仍有回退兜底）。MCP server 原有 `AGY_MCP_LIVE_FILE` 不变。
-- README 中英双语新增「经 npm 安装」章节；方式 D 补充 `agy-mcp-server` bin / `npx` 用法。
+- **`agy-indicator` 标准 npm 包形态**（对齐官方 `dsh-comfyui-bridge` 模式）：`home-plugin/agy-indicator/package.json` 的 `main` 从浏览器占位 `lib/client-entry.mjs` 改为 Host 半入口 `lib/index.mjs`，`exports` 双面暴露（`.` → host、`./client` → 浏览器半），新增 `dsh.bundle.patch` → 包内 `cordis.patch.yml`（bundle 补丁层，安装后自动挂载通用默认行）。家级 `cordis.patch.yml` 的 host 行从 `file:///...lib/index.mjs?v=7` 迁移为**裸包名** `name: agy-indicator`（经 junction 解析，client 半靠 `dsh.client` 声明自动纳入浏览器花名册，无需单独 client 行）。跨设备分发：`dsh plugin --profile web add agy-indicator`。
+- README 中英双语新增「经 npm 安装」章节；方式 D 补充 `agy-mcp-server` bin / `npx` 用法；方式 B 改为标准裸包名安装说明（本机 junction + 跨设备 npm）。
 
 ### Notes
 - 兼容性：persona 新写法对更早的 DSH 版本同样合法（`text` 从未是 schema 的正式字段，旧版只是宽松忽略未知键）。
