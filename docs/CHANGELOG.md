@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.6.2] - 2026-09-10
+
+### Fixed
+- **修复合并主包布局下「MCP 通道点灯」失效（host 读错 live 文件路径）**。MCP server（部署在 `<dsh-home>/bin/agy-mcp-server.mjs`）始终把运行状态写到 `<dsh-home>/plugins/agy-indicator/mcp-live.json`；但 1.6.0 并包后 host 半随包位于 `<pkg>/home-plugin/agy-indicator/lib/index.mjs`，旧代码用 `new URL('../mcp-live.json', import.meta.url)` 定位，`../` 落到**包内部**（`<pkg>/home-plugin/agy-indicator/mcp-live.json`），永远读不到 MCP 写的共享文件。症状：`mcp__agy__*` 调用时 MCP 写盘正常、文件里 `running:1`，但家级灯恒 `idle`（本机以主包名 junction 安装后逐秒采样 47/47 漏报确认）。现改为按与 `dsh-plugin-manager-plus` 同款的 `detectDshHome()`（`DSH_HOME` → `%APPDATA%/DSH Desktop/dsh-home` → `~/.dsh`）锚定共享文件；显式 `AGY_MCP_LIVE_FILE` 仍最优先，旧 `import.meta.url` 相对路径降为末位兜底（旧式 `<dsh-home>/plugins/agy-indicator/lib/` 布局继续可用）。
+
 ## [1.6.1] - 2026-09-10
 
 ### Fixed

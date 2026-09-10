@@ -152,13 +152,20 @@ export function apply(ctx) {
   })
 
   // ── MCP 形态桥接（读盘合并）────────────────────────────────────────────
-  // mcp__agy__* 工具由 agy-mcp-server.mjs（dsh-mcp-client 拉起的独立子进程）
-  // 执行，它没有 ctx 无法 emit；约定把状态写到本插件目录下的 mcp-live.json
-  // （AGY_MCP_LIVE_FILE 可覆盖，默认 <dsh-home>/plugins/agy-indicator/）。
+  // mcp__agy__* 工具由 agy-mcp-server.mjs（dsh-mcp-client 拉起的独立子进程，
+  // 部署在 <dsh-home>/bin）执行，它没有 ctx 无法 emit；约定把状态写到
+  //   <dsh-home>/plugins/agy-indicator/mcp-live.json
   // 这里在每次 status 请求（client 每 1.2s 轮询）时读盘合并，MCP 会话的
   // 运行/结果即可进同一张 projects 表 → 普通模式调用 mcp__agy__ 也有灯。
-  const MCP_LIVE_FILE = process.env.AGY_MCP_LIVE_FILE
-    || new URL('../mcp-live.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1').replace(/%20/g, ' ')
+  //
+  // 【v1.6.2 路径必须与安装布局无关】host 半随包分发的位置有两种：
+  //   旧式独立内层包：<dsh-home>/plugins/agy-indicator/lib/index.mjs（../ 即共享目录）
+  //   合并主包（npm/junction）：<pkg>/home-plugin/agy-indicator/lib/index.mjs（../ 在包内）
+  // 主包形态下 `new URL('../mcp-live.json')` 会指到包内部、永远读不到 MCP 写的
+  // 共享文件（症状：MCP 写盘正常、灯恒 idle）。故按 detectDshHome() 锚定 dsh-home
+  // （与 dsh-plugin-manager-plus 同款推导），显式 AGY_MCP_LIVE_FILE 仍最优先，
+  // 旧 import.meta.url 相对路径作末位兜底（自定义布局）。
+  let MCP_LIVE_FILE = process.env.AGY_MCP_LIVE_FILE || null
   let liveReadAt = 0
   const LIVE_READ_MIN_MS = 400
   let fsRead = null
@@ -166,9 +173,31 @@ export function apply(ctx) {
   ;(async () => {
     try {
       const fs = await import('node:fs')
+      const path = await import('node:path')
+      const os = await import('node:os')
       fsRead = fs.readFileSync
       fsExists = fs.existsSync
-    } catch (e) { fsRead = null; fsExists = null }
+      if (!MCP_LIVE_FILE) {
+        const join = path.join
+        let dshHome = process.env.DSH_HOME || null
+        if (!dshHome) {
+          const appData = process.env.APPDATA || (os.homedir() && join(os.homedir(), 'AppData', 'Roaming'))
+          const desktopHome = appData ? join(appData, 'DSH Desktop', 'dsh-home') : ''
+          if (desktopHome && fs.existsSync(desktopHome)) dshHome = desktopHome
+          else dshHome = join(os.homedir(), '.dsh')
+        }
+        const candidates = [
+          join(dshHome, 'plugins', 'agy-indicator', 'mcp-live.json'),
+          new URL('../mcp-live.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1').replace(/%20/g, ' ')
+        ]
+        MCP_LIVE_FILE = candidates.find((c) => { try { return fs.existsSync(c) } catch { return false } }) || candidates[0]
+      }
+    } catch (e) {
+      fsRead = null; fsExists = null
+      if (!MCP_LIVE_FILE) {
+        try { MCP_LIVE_FILE = new URL('../mcp-live.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1').replace(/%20/g, ' ') } catch { MCP_LIVE_FILE = null }
+      }
+    }
   })()
   function mergeLiveFile() {
     if (!fsRead || !fsExists) return

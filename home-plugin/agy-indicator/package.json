@@ -1,7 +1,7 @@
 {
   "name": "agy-indicator",
   "description": "【仓库内部构件，private：不独立发布】agy 状态灯的内层包目录，随主包 agy-first-bridge 分发（主包 main/exports 指向本目录 lib/，dsh.bundle.patch 指向本目录 cordis.patch.yml）。__ModuleLoader__ 模块 id 用主包名 agy-first-bridge，切勿用本内层包名 agy-indicator，否则 client-modules bundle 校验抛 'loaded without registering' 并使整屏插件页崩溃。独立 npm 包 agy-indicator 已自 v1.6.0 起弃用留档（冻结于旧版，不再更新）。",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "private": true,
   "type": "module",
   "main": "./lib/index.mjs",

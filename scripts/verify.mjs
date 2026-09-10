@@ -66,6 +66,15 @@ const bundlePatch = read(join('home-plugin', 'agy-indicator', 'cordis.patch.yml'
 check('bundle patch layer has an insert row named after the MAIN package',
   /-\s+id:\s*agy-indicator\b/.test(bundlePatch) && /name:\s*agy-first-bridge\b/.test(bundlePatch))
 
+// host 半的 MCP live 文件定位必须与安装布局无关（v1.6.2 回归护栏）：
+// 合并主包下 index.mjs 在 <pkg>/home-plugin/agy-indicator/lib/，不能只靠
+// new URL('../mcp-live.json')（会指到包内），必须用 detectDshHome/DSH_HOME
+// 锚定 <dsh-home>/plugins/agy-indicator/mcp-live.json。
+const hostSrc = read(join('home-plugin', 'agy-indicator', 'lib', 'index.mjs'))
+check('host resolves MCP live file via DSH_HOME/detectDshHome (layout-independent)',
+  /DSH_HOME/.test(hostSrc) && /plugins['",\s)]+agy-indicator['",\s)]+mcp-live\.json/.test(hostSrc))
+check('host keeps AGY_MCP_LIVE_FILE explicit override first', /AGY_MCP_LIVE_FILE/.test(hostSrc))
+
 // ── 4. 内层包：private（不得独立发布），结构自洽 ────────────────────────────
 const hpPkgPath = join('home-plugin', 'agy-indicator', 'package.json')
 if (existsSync(join(root, hpPkgPath))) {
