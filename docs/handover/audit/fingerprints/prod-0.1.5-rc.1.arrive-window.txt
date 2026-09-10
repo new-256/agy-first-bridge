@@ -1,0 +1,37 @@
+				};
+				for (const registration of pending) target.load(registration);
+			}
+			/** Register one bundle factory, rejecting a script that executes twice without invalidation. */
+			register(registration) {
+				const id = stripClientSuffix(registration.id);
+				if (this.bootstrapIds.has(id) || this.factories.has(id)) throw new Error(`client-modules: duplicate factory registration for "${registration.id}" (bundle executed twice without invalidate?)`);
+				this.factories.set(id, registration.factory);
+			}
+			/** Load one graph row so its factory is registered (idempotent per in-flight arrival). */
+			arrive(row) {
+				const { id } = row;
+				if (this.loadCache.has(id) || this.factories.has(id)) return Promise.resolve();
+				const reloadUrl = this.reloadUrls.get(id);
+				const url = reloadUrl ?? row.initialUrl;
+				let transport = this.pendingArrival.get(url);
+				if (transport === void 0) {
+					transport = this.loadBundle(url).finally(() => {
+						this.pendingArrival.delete(url);
+					});
+					this.pendingArrival.set(url, transport);
+				}
+				return transport.then(() => {
+					if (!this.factories.has(id)) throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`);
+					if (reloadUrl !== void 0 && this.reloadUrls.get(id) === reloadUrl) this.reloadUrls.delete(id);
+				});
+			}
+			/** Register each injected package and unresolved dynamic request before its consumer. */
+			async arriveGraphRow(row, open = [], visited = /* @__PURE__ */ new Set()) {
+				const cycleStart = open.indexOf(row.id);
+				if (cycleStart !== -1) throw new Error(`client-modules: module arrival cycle ${[...open.slice(cycleStart), row.id].join(" -> ")} (the host must reject this graph before serving it)`);
+				if (visited.has(row.id)) return;
+				visited.add(row.id);
+				const next = [...open, row.id];
+				for (const request of row.external) {
+					const id = stripClientSuffix(request);
+					if (this.seed.has(request) || this.loadCache.has(id)) continue;

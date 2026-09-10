@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]（支持声明与交接，不发布 npm）
+
+### Added
+- `docs/SUPPORT.md`：DSH 逐版本兼容性声明。基于对 `@deepseek-ai/dsh-client-modules@0.0.1-rc.1 .. 0.1.5-rc.2`、`@deepseek-ai/dsh-web-app@0.0.1-rc.1 .. 0.1.5-rc.2` 共 16 个历史 tarball 的逐字节指纹比对；支持下限定为 `@deepseek-ai/dsh ≥ 0.1.2-rc.1`（arrive() 契约从 0.0.1 起就存在，但 `reloadUrls` 等配套此版才补齐）。
+- `docs/issues/BACKEND-ISSUES.md`：提给 DSH 后端 / 桌面壳的两条 issue 草案（挂载期校验 client id / enterSafeMode 单行隔离）。
+- `docs/handover/audit/`：回测证据 JSON 与关键版本 client.js 的 arrive() 契约指纹（含 SHA256），可独立复算。
+
+### Changed
+- README 版本表回填 v1.6.1 / v1.6.2 行；新增"与 DSH 的版本兼容性（速查）"一节，明确支持下限 `0.1.2-rc.1`。
+- Git tag 补齐：`v1.5.15` / `v1.6.0` / `v1.6.2`（v1.6.1 已存在）；GitHub Release 对应三版已建立，v1.6.2 置为 Latest。
+
 ## [1.6.2] - 2026-09-10
 
 ### Fixed

@@ -27,7 +27,9 @@ const mcpSrc = read(join('mcp', 'agy-mcp-server.mjs'))
 const changelog = read(join('docs', 'CHANGELOG.md'))
 
 const mcpMatch = mcpSrc.match(/^const VERSION = '([^']+)'/m)
-const logMatch = changelog.match(/^## \[([^\]]+)\]/m)
+// Skip an "## [Unreleased]" ledger section if present — it is documentation
+// that hasn't shipped yet, not the currently released version.
+const logMatch = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m)
 
 check('mcp server declares VERSION', !!mcpMatch)
 check('CHANGELOG has a top version entry', !!logMatch)

@@ -201,8 +201,11 @@ agy-first-bridge/
    ├─ INSTALL.md
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
-   ├─ CHANGELOG.md               # 版本历史（1.0.0 → 1.5.12）
-   └─ en/                        # 英文文档
+   ├─ SUPPORT.md                   # DSH 逐版本支持声明（基于逐 tarball 指纹回测）
+   ├─ CHANGELOG.md                 # 版本历史（1.0.0 → 1.6.2）
+   ├─ issues/BACKEND-ISSUES.md     # 提给 DSH/桌面壳上游的 issue 草案（item B/C）
+   └─ handover/                    # 会话交接资料（audit 证据 + 客户端契约指纹）
+   └─ en/                          # 英文文档
 ```
 
 ## 版本与发布
@@ -211,7 +214,9 @@ agy-first-bridge/
 
 | 版本 | 适配 DSH | 内容 |
 | --- | --- | --- |
-| [v1.6.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.0) | 0.1.3-alpha.2 | **双包合一**：灯并入主包 `agy-first-bridge`（主包 `package.json` 增加 DSH 插件面——`main` → 灯 Host 半、`exports` 双面、`dsh.bundle.patch`；`dsh plugin --profile web add agy-first-bridge` 单命令装灯），独立 npm 包 `agy-indicator` 弃用留档 |
+| [v1.6.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.2) | ≥ 0.1.2-rc.1（建议 ≥0.1.3-alpha.2；实测 0.1.5-rc.1） | **修复合并包装下状态灯恒 idle**：host 半不再以 `import.meta.url` 找 `mcp-live.json`，改为 `AGY_MCP_LIVE_FILE` → `DSH_HOME` → `%APPDATA%\DSH Desktop\dsh-home` → `~/.dsh` 锚定，对齐 `dsh-plugin-manager-plus` 的 detectDshHome；verify 闸门加路径回归护栏 |
+| [v1.6.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.1) | ≥ 0.1.2-rc.1 | **修复整屏崩溃（全新安装 `Failed to load plugins`）**：client.js 里 `__ModuleLoader__.load` 的 id 改为 npm 包名 `agy-first-bridge`（1.6.0 写成了 `agy-indicator`，违背 dsh-client-modules `arrive()` 的 id 契约）；新增 `scripts/verify.mjs` 22 项发布前闸门（含 id 契约和版本三锁） |
+| [v1.6.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.0) | 0.1.3-alpha.2 | **双包合一**：灯并入主包 `agy-first-bridge`（主包 `package.json` 增加 DSH 插件面——`main` → 灯 Host 半、`exports` 双面、`dsh.bundle.patch`；`dsh plugin --profile web add agy-first-bridge` 单命令装灯），独立 npm 包 `agy-indicator` 弃用留档。⚠️ 存在两处后继修复，请直接使用 ≥v1.6.2 |
 | [v1.5.15](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.15) | 0.1.3-alpha.2 | **适配 dsh-persona 新校验**（DSH 0.1.3-alpha.2 起 `prefix` 必填；旧 `text:` 拒绝挂载 → 迁移为 `prefix`+`suffix`，原文语义逐字保留）＋ **npm 发布**（去 `private`、加 `bin`/`files`/provenance，`agy-mcp-server` 可 `npx`）＋ `AGY_QUOTA_SCRIPT` 环境变量覆盖额度脚本路径（npm 安装布局自适配）＋ **agry-indicator 标准 npm 包形态**（`main` → `lib/index.mjs` Host 半、`exports` 双面暴露、`dsh.bundle.patch` bundle 补丁层；host 行改裸包名 `agy-indicator`，对齐官方 `dsh-comfyui-bridge`，跨设备 `dsh plugin --profile web add agy-indicator`） |
 | [v1.5.14](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.14) | 0.1.2-alpha.5 | **修复状态灯永久冻结**：聚合状态表达式里的裸变量 `lastOk`（未声明 → 非 SUCCESS 结束必抛被吞的 ReferenceError）——灯冻结在旧 "running" 快照、agy_status 报「lastOk is not defined」；同 codebuddy-core v1.1.0 整改只看 `lastStatus`，preset/dynamic/web-search 桥三处同修 |
 | [v1.5.13](https://github.com/new-256/agy-first-bridge/releases/tag/v1.5.13) | 0.1.2-alpha.5 | **agy MCP 全局注入**（家级 patch 注册 → 所有 preset 都能调 `mcp__agy__*`）＋ **MCP 通道点灯**（server 写盘 `mcp-live.json`，家级灯读盘合并）＋ **额度门禁只认 5h**（移除周额度软警告与相关提示词；周用量不再参与单次任务判断）＋ 修复调用结束后状态灯跨会话常驻（`OK_HOLD_MS` 不再随全局租约放大到 10 分钟） |
@@ -235,6 +240,14 @@ agy-first-bridge/
 | [v1.0.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.0.0) | 0.1.1-rc.2 | agy 桥接工具、DSH 完全控制、回退弹窗、状态灯、两种形态、文档与 CI |
 
 详见 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
+
+### 与 DSH 的版本兼容性（速查）
+
+支持声明的完整证据在 [docs/SUPPORT.md](docs/SUPPORT.md)（逐 tarball 字节级指纹回测自 `0.0.1-rc.1` → `0.1.5-rc.2`）。
+
+- **支持下限：`@deepseek-ai/dsh ≥ 0.1.2-rc.1`** —— 从这一版起 `dsh-client-modules` 才补全 `reloadUrls` / `exactPackageSpecifier` 等契约细节（同一条 `arrive()` 校验「`__ModuleLoader__.load({id})` 的 `id` 必须等于包名」从 `0.0.1-rc.1` 起就存在，但早期缺少配套契约构成，**不算支持**）。
+- **当前开发基准：`0.1.5-rc.1`**（也是 `latest` dist-tag；本机生产环境实测灯/工具/回退一切正常）。
+- **桌面壳（DSH Desktop）**：对壳版本**无要求**；壳的 enterSafeMode 粒度问题与本插件无关（详见 `docs/issues/BACKEND-ISSUES.md`）。
 
 ## 安全说明
 

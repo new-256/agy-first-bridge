@@ -1,0 +1,20 @@
+						id,
+						exports: registered(this.makeRequire(edges)),
+						styles: claimStyles(id),
+						edges
+					};
+					this.loadCache.set(id, record);
+					return record;
+				} finally {
+					this.materializing.delete(id);
+				}
+			}
+			/**
+			* The synchronous require answered to factories: seed → memoized record →
+			* registered factory. Fetching is async and therefore unreachable
+			* from here; an external dynamic package must have arrived before its
+			* consumer materializes.
+			*/
+			makeRequire(edges) {
+				return (spec) => {
+					edges.add(spec);

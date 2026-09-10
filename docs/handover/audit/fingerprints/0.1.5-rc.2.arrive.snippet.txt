@@ -1,0 +1,20 @@
+			/** Load one graph row so its factory is registered (idempotent per in-flight arrival). */
+			arrive(row) {
+				const { id } = row;
+				if (this.loadCache.has(id) || this.factories.has(id)) return Promise.resolve();
+				const reloadUrl = this.reloadUrls.get(id);
+				const url = reloadUrl ?? row.initialUrl;
+				let transport = this.pendingArrival.get(url);
+				if (transport === void 0) {
+					transport = this.loadBundle(url).finally(() => {
+						this.pendingArrival.delete(url);
+					});
+					this.pendingArrival.set(url, transport);
+				}
+				return transport.then(() => {
+					if (!this.factories.has(id)) throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`);
+					if (reloadUrl !== void 0 && this.reloadUrls.get(id) === reloadUrl) this.reloadUrls.delete(id);
+				});
+			}
+			/** Register each injected package and unresolved dynamic request before its consumer. */
+			async arriveGraphRow(row, open = [], visited = /* @__PURE__ */ new Set()) {

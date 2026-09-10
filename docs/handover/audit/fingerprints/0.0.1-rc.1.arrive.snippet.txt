@@ -1,0 +1,20 @@
+			return {
+				rev: graph.rev,
+				modules,
+				plugins
+			};
+		}
+		//#endregion
+		//#region lib/types/client/index.js
+		/**
+		* Enroll the kernel-built module system as `ctx.modules`.
+		* @param ctx - client root context.
+		*/
+		function apply(ctx) {
+			const modules = globalThis.__DSH_MODULES__;
+			if (modules === void 0) throw new Error("client-modules: window.__DSH_MODULES__ missing — the shell kernel must construct the module system before plugin boot");
+			ctx.reflect.provide("modules", modules);
+		}
+		//#endregion
+		exports.ClientModuleSystem = ClientModuleSystem;
+		exports.apply = apply;
