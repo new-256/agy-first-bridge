@@ -39,6 +39,13 @@ jobs:
           node --check mcp/agy-mcp-server.mjs
           node mcp/agy-mcp-server.mjs --check
 
+      # Release gate: version triple-lock, client registration id === package name
+      # (the v1.6.1 crash class), standard distribution shape, preset composition.
+      # Same script runs in npm `prepack`; keep CI running it too so the gate
+      # cannot be bypassed by publishing without the npm lifecycle hook.
+      - name: Release gate (scripts/verify.mjs)
+        run: node scripts/verify.mjs
+
       - name: Syntax-check dynamic bodies
         shell: bash
         run: |
