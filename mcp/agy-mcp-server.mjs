@@ -38,7 +38,7 @@ import { fileURLToPath } from 'node:url'
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 
 const NAME = 'agy-mcp-server'
-const VERSION = '1.5.13'
+const VERSION = '1.6.1'
 const PROTOCOL = '2024-11-05'
 
 // ── home-light bridge ────────────────────────────────────────────────────────

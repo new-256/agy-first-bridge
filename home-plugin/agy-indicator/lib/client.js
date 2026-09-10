@@ -35,10 +35,20 @@
 //   切换会话（组件卸载）时 clearInterval 必成功，不会因 ctx.interval 的 disposer
 //   形态差异而抛错导致对话窗口空白。
 // - apply 用 ctx.inject(['slots'], (scope) => {...}) 等待 slots 服务就绪后再注册。
-// - id 用 'agy-indicator-home'，避免与动态插件形态的 'agy-indicator' 在同 slot 撞 id。
+// - slot 注册 id 用 'agy-indicator-home'，避免与动态插件形态在同 slot 撞 id。
+//
+// 【v1.6.1 关键契约】__ModuleLoader__.load 的模块 id 必须 === npm 包名
+// "agy-first-bridge"。client-modules（@deepseek-ai/dsh-client-modules）按
+// loader 行解析到的 package.json 的 name 生成 graph 行 id（host 侧
+// locatePkgJson → nearestPackage，浏览器侧 arrive() 用同一 id 校验）：
+// 若 bundle 已加载却没注册同名模块，arrive() 直接抛
+//   'bundle ... loaded without registering "<name>"'，
+// combo 机制下单模块失败会糊掉整屏插件页。切勿改回 "agy-indicator"——
+// 那是已弃用独立内层包的名字（home-plugin/agy-indicator/package.json
+// private:true，不独立发布）。
 
 window.__ModuleLoader__.load({
-  id: "agy-indicator",
+  id: "agy-first-bridge",
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;

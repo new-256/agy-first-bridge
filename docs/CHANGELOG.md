@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.6.1] - 2026
+
+### Fixed
+- **修复全新安装时整屏插件页崩溃（client 模块注册 id 失配）**。v1.6.0 把灯并入主包后，`home-plugin/agy-indicator/lib/client.js` 的 `__ModuleLoader__.load({ id })` 仍写着旧内层包名 `"agy-indicator"`，而 `@deepseek-ai/dsh-client-modules` 按 loader 行解析到的 package.json `name`（主包名 `agy-first-bridge`）生成 graph 行 id。两者不一致时浏览器侧 `arrive()` 抛 `client-modules: bundle ... loaded without registering "agy-first-bridge"`，combo 机制下单模块失败会糊掉整屏插件页（同款事故见 codebuddy-first-bridge 1.1.7）。本机 junction/内层包形态因 graph id 恰为 `agy-indicator` 而未暴露，故一直未发现。现已将注册 id 改为主包名 `agy-first-bridge`。
+
+### Added
+- **发布闸门 `scripts/verify.mjs`（`npm run prepack` 自动执行）**：把「client 注册 id 必须 === 主包名」做成静态检查，含显式禁止退回 `agy-indicator` 的双保险；另锁版本号三处一致（package.json ↔ MCP `VERSION` ↔ CHANGELOG 顶部）、主包 DSH 插件面结构、bundle patch 行、preset 组合要素。v1.6.0 主包 package.json 完全没有 scripts/prepack，是该缺陷能流到 npm 的直接原因。
+
+### Changed
+- MCP server `VERSION` 从漂移的 `1.5.13` 同步为 `1.6.1`（`serverInfo.version` 与 `--check` 输出随之修正）。
+- 内层包 `home-plugin/agy-indicator/package.json` 标记 `"private": true` 并 bump 1.6.1：它只是随主包分发的仓库内部构件，禁止再以 `agy-indicator` 名单独发布（独立包冻结于旧版留档）。
+- client.js 顶部注释补写 id 契约与事故根因，防止后续误改回内层包名。
+
 ## [1.6.0] - 2026
 
 ### Changed

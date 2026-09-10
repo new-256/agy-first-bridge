@@ -1,10 +1,15 @@
 {
   "name": "agy-first-bridge",
-  "version": "1.6.0",
-  "description": "agy-first bridge for DeepSeek Harness (DSH): prioritize the local agy CLI in every mode (full DSH control, no prompts), with a rate-limit/network fallback dialog, a live status light (dynamic form + home-level plugin), and a zero-dependency MCP server so any MCP-capable agent (Claude Code / Codex / Cherry Studio …) discovers agy itself. Single npm package: install the home-level status light via `dsh plugin --profile web add agy-first-bridge`.",
+  "version": "1.6.1",
+  "description": "agy-first bridge for DeepSeek Harness (DSH): prioritize the local agy CLI in every mode (full DSH control, no prompts), with a rate-limit/network fallback dialog, a live status light (dynamic form + home-level plugin), and a zero-dependency MCP server so any MCP-capable agent (Claude Code / Codex / Cherry Studio …) discovers agy itself. Single npm package: install the home-level status light via `dsh plugin --profile web add agy-first-bridge`. v1.6.1 fixes a client-module registration id mismatch that crashed the whole plugin page on a fresh install.",
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "verify": "node scripts/verify.mjs",
+    "check": "node mcp/agy-mcp-server.mjs --check && node scripts/verify.mjs",
+    "prepack": "node scripts/verify.mjs"
   },
   "main": "./home-plugin/agy-indicator/lib/index.mjs",
   "exports": {
@@ -28,7 +33,8 @@
     "home-plugin/",
     "dynamic/",
     "mcp/",
-    "bin/"
+    "bin/",
+    "scripts/"
   ],
   "keywords": [
     "dsh",
