@@ -31,11 +31,12 @@ npm view agy-first-bridge dist-tags.latest   # 应为 1.6.2
 |---|---|---|
 | 宿主 MCP 全局 | `cordis.patch.yml` 的 `mcp-agy-global` 行 → `dsh-home\bin\agy-mcp-server.mjs`（v1.6.2，绝对路径） | ✅ 实测 SUCCESS（会话内 `mcp__agy__*` 工具来源） |
 | Agent preset | `.agent-presets\cordis-agy\agy-first-bridge.mjs`（默认 preset：原生 agy_run/continue/status/quota + agy-first 策略） | ✅ 实测 SUCCESS（拷贝略旧于 1.6.2：缺 AGY_QUOTA_SCRIPT 覆盖，但 fallback 仍命中 `dsh-home\bin\agy-quota.mjs`，无功能损失） |
-| Profile bundle | `dsh-home\profiles\web`：bundles 含 agy-first-bridge，依赖 `file:C:/Users/lcl/Desktop/agy-first-bridge` + node_modules junction | ❌ **死链**：仓库迁移后旧路径不存在，junction 悬空、package.json/pnpm-lock 同样指旧路径 → client.js 状态灯加载不上，1.6.2 灯修复实际未进运行时 |
+| Profile bundle | `dsh-home\profiles\web`：bundles 含 agy-first-bridge，依赖 `^1.6.2` registry 安装 | ✅ **09-12 闭环修复**：死链 junction 已拆、`file:` 依赖已改 registry、node_modules 已装 npm 1.6.2（tgz SHA512 与 registry 一致；18 个 shipped 文件 ≡ v1.6.2 tag，行尾 CRLF 差异除外）；工作树仅领先 README.md 文档更新 + verify.mjs Unreleased 容错两个未发版小改动 |
 
 - **为什么搬家会断**：profile 层当初是开发态接线——`file:` 依赖 + junction 直指仓库工作副本（配合 `patchReload: live`，改仓即生效、免发版）。npm 上的 1.6.2 本身完好；断的只是这条指向桌面源码目录的开发链。对照：同 profile 的 codebuddy-first-bridge 走 `^1.1.7` registry 安装，不受仓库位置影响。
-- **修法二选一**（尚未执行）：① bundle 依赖改为 registry 安装，彻底与仓库位置解耦，升级跟 npm 走；② `file:` 路径与 junction 重指 `C:\Users\lcl\Desktop\DSH插件开发\agy-first-bridge`，保留开发态热更。修后需**重启 DSH Desktop**（node_modules bundle 不支持补丁热替 host 半），再用任一 agy 调用验证灯亮。
-- 家级 `agy-indicator` 独立行已注释退役；`dsh-home\plugins\agy-indicator\` 现仅存 MCP 子进程写的 `mcp-live.json` 桥接快照（1.6.2 修的正是该文件路径解析）。旧包备份仍在 `dsh-home\backups\pkg-20260910/`；`bin\codebuddy-mcp-server.mjs` = v1.1.9（已同步）。
+- **闭环已执行（09-12）**：备份（`package.json.bak-20260912-loopclose` / `pnpm-lock.yaml.bak-20260912-loopclose`）→ 拆死链 junction → 依赖改 `^1.6.2` → `npm pack` 下载并 SHA512 校验后解包至 node_modules → pnpm-lock 三处对齐（importers/packages/snapshots）→ 一致性核验（installed ≡ tag）。**待重启 DSH Desktop 后**：用任一 agy 调用验证灯亮；`GET /agy-indicator/status` 应出现 `projects` 条目（1.6.2 修复了 mcp-live.json 合并路径）。
+- **遗留谜团（下个会话可查）**：重启前的运行进程（当天 19:55 启动）里 `/agy-indicator/status` 由一个**磁盘上找不到的旧实现**应答（指纹 = 1.5.15 时代：presetActive 粘滞、不合并 mcp-live.json、无 presetSessions）；已排除宿主 patch 10 行、全部 bundle 包、preset、backend、app.asar、updater 暂存（多轮 ignore-free 全盘 grep）。重启后观察该路由是否被 1.6.2 实现接管即可定位其来源。
+- 家级 `agy-indicator` 独立行已注释退役；`dsh-home\plugins\agy-indicator\` 现仅存 MCP 子进程写的 `mcp-live.json` 桥接快照（1.6.2 修的正是该文件路径解析）。旧包备份（含 `agy-indicator.bak-1.5.15` 完整旧实现）在 `dsh-home\backups\pkg-20260910/`；`bin\codebuddy-mcp-server.mjs` = v1.1.9（已同步）。
 
 ## 维护高频事项
 
