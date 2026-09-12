@@ -249,6 +249,10 @@ agy-first-bridge/
 - **当前开发基准：`0.1.5-rc.1`**（也是 `latest` dist-tag；本机生产环境实测灯/工具/回退一切正常）。
 - **桌面壳（DSH Desktop）**：对壳版本**无要求**；壳的 enterSafeMode 粒度问题与本插件无关（详见 `docs/issues/BACKEND-ISSUES.md`）。
 
+## 开发纪律（开发-制品闭环）
+
+本仓及本机所有 DSH 插件的开发遵循**闭环纪律**：开发 → 测试 → 提交 → 发版 → **卸载本地开发态接线** → **从制品源（npm registry）安装** → 测试 → **对比一致性（已安装 ≡ 发布 tag）** → 闭环备案 → 等待下一次修订。发布后本机部署一律使用制品形态（registry 安装），`file:`/junction 直连工作副本的开发态接线仅限活跃开发会话内使用。全文见 **[docs/DEV-DISCIPLINE.md](docs/DEV-DISCIPLINE.md)**（含七条纪律与 2026-09-12 仓库迁移断链事故背景）。
+
 ## 安全说明
 
 - `--dangerously-skip-permissions` 表示 agy 会在不再询问的情况下改动文件、执行命令。这是「DSH 完全控制 agy」这一需求的直接实现，请仅在你信任 agy 执行环境时使用。

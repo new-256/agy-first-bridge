@@ -40,6 +40,7 @@ npm view agy-first-bridge dist-tags.latest   # 应为 1.6.2
 
 ## 维护高频事项
 
+- **开发纪律（必读）**：[docs/DEV-DISCIPLINE.md](../DEV-DISCIPLINE.md) —— 开发-制品闭环七条纪律；发布后本机部署必须切换制品形态，开发态接线不可跨会话存活。
 - **发版流程**：改代码 → 三处版本（package.json / mcp VERSION / CHANGELOG 顶部条目）→ `npm run check` → commit + `git tag vX.Y.Z` → push（含 tags）→ `npm publish`（prepack 自动过 verify）→ `gh release create`（latest 指向新 tag）。网络抖动时 npm PUT 会 ECONNRESET 但实际已暂存，等 ~60s 后查 registry 再决定重试，避免 409 假象。
 - **client.js 注册 id 永远 === 主包名 `agy-first-bridge`**（dsh-client-modules arrive() 契约，verify 已钉死）。
 - **DSH 升级时**：先看新 `dsh-client-modules` 的 arrive() 是否仍与本仓指纹一致（`audit/fingerprints/` 对比），再决定 SUPPORT.md 支持的上下限。
