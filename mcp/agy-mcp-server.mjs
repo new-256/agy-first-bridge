@@ -259,7 +259,7 @@ function buildResult(parsed, outcome, mode, stderrText, stdoutText) {
 
 function buildArgv(exe, a) {
   const argv = [exe, '-p', String(a.prompt), '--output-format', 'stream-json', '--dangerously-skip-permissions']
-  const timeoutSec = clampInt(a.timeoutSec, 300, 10, 3600)
+  const timeoutSec = clampInt(a.timeoutSec, 600, 10, 3600)
   argv.push('--print-timeout', timeoutSec + 's')
   let mode = a.mode || 'accept-edits'
   if (mode === 'plan' || mode === 'accept-edits') argv.push('--mode', mode)
@@ -347,7 +347,6 @@ function textResult(res) {
   const limited = !res.ok && isLimited(res)
   const head = 'agy ' + (res.ok ? 'OK' : 'FAILED') + ' [status=' + res.status + ' mode=' + res.mode +
     (res.conversationId ? ' conv=' + res.conversationId : '') +
-    (res.totalTokens != null ? ' tokens=' + res.totalTokens : '') +
     (res.durationSeconds != null ? ' ' + res.durationSeconds + 's' : '') + ']'
   let note = ''
   if (limited) note = '\n\n[Note: this looks like a rate-limit / network failure. Do NOT retry agy in a loop; finish the task with your own tools, or ask the user.]'
@@ -398,13 +397,13 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        prompt: { type: 'string', description: 'The full task/instruction for agy. Be complete and self-contained.' },
+        prompt: { type: 'string', description: 'The task instruction for agy. On first dispatch for a topic, include a compact CONTEXT preamble (goal, repo root, key paths, decisions/constraints; point at paths, do not paste file contents — agy reads the repo itself). For follow-ups on the same topic, use agy_continue with latest=true or conversationId (agy keeps conversation context; state only what is new).' },
         mode: { type: 'string', enum: ['plan', 'accept-edits'], description: 'plan = no writes; accept-edits = allow edits (default).' },
         model: { type: 'string', description: 'Optional agy model id — pick from the Gemini pool or utility models per the model-selection policy (use agy_quota to see the recommended:true list). Do NOT pass a Claude/GPT (3p) model.' },
         effort: { type: 'string', enum: ['low', 'medium', 'high'] },
         cwd: { type: 'string', description: 'Working directory for agy (default: AGY_MCP_CWD or the DSH workspace).' },
         addDirs: { type: 'array', items: { type: 'string' } },
-        timeoutSec: { type: 'integer', description: '10-3600, default 300.' }
+        timeoutSec: { type: 'integer', description: '10-3600, default 600.' }
       },
       required: ['prompt']
     }
@@ -415,14 +414,14 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        prompt: { type: 'string' },
+        prompt: { type: 'string', description: 'Follow-up instruction for the ongoing agy conversation. State only what is new; agy preserves its conversation context.' },
         conversationId: { type: 'string' },
         latest: { type: 'boolean', description: 'Continue the most recent agy conversation.' },
         mode: { type: 'string', enum: ['plan', 'accept-edits'] },
         model: { type: 'string' },
         effort: { type: 'string', enum: ['low', 'medium', 'high'] },
         cwd: { type: 'string' },
-        timeoutSec: { type: 'integer' }
+        timeoutSec: { type: 'integer', description: '10-3600, default 600.' }
       },
       required: ['prompt']
     }

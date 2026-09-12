@@ -71,7 +71,7 @@ function isLimited(res) { if (!res || res.ok) return false; if (res.status === '
 
 function buildArgv(exe, args, planActive) {
   const argv = [exe, '-p', String(args.prompt), '--output-format', 'stream-json', '--dangerously-skip-permissions']
-  const timeoutSec = clampInt(args.timeoutSec, 300, 10, 3600)
+  const timeoutSec = clampInt(args.timeoutSec, 600, 10, 3600)
   argv.push('--print-timeout', timeoutSec + 's')
   let mode = args.mode || 'auto'
   if (mode === 'auto') mode = planActive ? 'plan' : 'accept-edits'
@@ -220,10 +220,11 @@ return {
       return dispose
     }
 
-    async function runSync(argv, cwd, timeoutSec, callerSignal) {
+    async function runSync(argv, cwd, timeoutSec, callerSignal, onSpawn) {
       const spec = { argv, cwd, stdio, graceMs: 5000 }
       if (callerSignal) spec.signal = callerSignal
       const handle = subprocess.spawn(spec)
+      if (typeof onSpawn === 'function') onSpawn(handle)
       // 超时强制 terminate（DSH 侧最终防线，绝不无限等）。
       // terminate 时记录最后事件摘要，便于区分"长命令正常"vs"真卡死"。
       let lastEventSummary = '(no events yet)'
@@ -248,17 +249,40 @@ return {
 
     function fallbackResult(res, mode) { return { ok: false, fallback: true, status: 'FALLBACK_TO_DSH', response: '', conversationId: (res && res.conversationId) || null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: res ? res.exitCode : null, mode: mode, stderr: res ? res.stderr : '', reason: res ? res.status : 'unknown' } }
 
-    async function askFallback(exec, res) {
+    async function askFallback(agent, signal, res) {
       const uq = ctx.get('userQuestions')
-      if (!uq || !exec || !exec.agent) return 'error'
+      if (!uq || !agent) return 'error'
       const detail = String(res.stderr || res.response || res.status || '').slice(-600)
       try {
-        const ans = await uq.ask({ agent: exec.agent, signal: exec.signal, questions: [{ id: 'agy-fallback', header: 'agy 受限', question: 'agy 调用失败（疑似流量受限/网络不通，状态=' + String(res.status) + '）。是否改用 DSH 本地 API 配置继续？', detail: detail, options: [ { label: FALLBACK_LABEL, description: '本次改由 DSH 本地模型/原生工具完成，不再走 agy' }, { label: RETRY_LABEL, description: '再调用一次 agy（网络抖动时可用）' }, { label: CANCEL_LABEL, description: '不回退，直接返回 agy 错误' } ] }] })
+        const spec = { agent: agent, questions: [{ id: 'agy-fallback', header: 'agy 受限', question: 'agy 调用失败（疑似流量受限/网络不通，状态=' + String(res.status) + '）。是否改用 DSH 本地 API 配置继续？', detail: detail, options: [ { label: FALLBACK_LABEL, description: '本次改由 DSH 本地模型/原生工具完成，不再走 agy' }, { label: RETRY_LABEL, description: '再调用一次 agy（网络抖动时可用）' }, { label: CANCEL_LABEL, description: '不回退，直接返回 agy 错误' } ] }] }
+        if (signal) spec.signal = signal
+        const ans = await uq.ask(spec)
         const sel = (ans && ans.answers && ans.answers[0] && ans.answers[0].selected) || []
         if (sel.indexOf(FALLBACK_LABEL) >= 0) return 'fallback'
         if (sel.indexOf(RETRY_LABEL) >= 0) return 'retry'
         return 'error'
       } catch (e) { return 'error' }
+    }
+
+    // Shared decision loop used by both foreground and background execution.
+    async function executeWithFallback(built, cwd, agent, signal, onSpawn) {
+      let attempt = 0; let res
+      while (true) {
+        attempt += 1
+        const r = await runSync(built.argv, cwd, built.timeoutSec, signal, onSpawn)
+        if (r.timedOut) {
+          res = { ok: false, status: 'HUNG_TIMEOUT', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: r.outcome ? r.outcome.exitCode : null, mode: built.mode, stderr: 'agy did not finish within ' + built.timeoutSec + 's (DSH hard timeout). Last activity: ' + r.lastEventSummary + '. NOTE: if the task was a long-running script (build/test), raise timeoutSec; this was a hang guard, not necessarily a failure of agy.' }
+          break
+        }
+        res = buildResult(parseStreamJson(r.stdoutText), r.outcome, built.mode, r.stderrText, r.stdoutText)
+        if (res.ok || !isLimited(res) || attempt >= 2) break
+        const decision = await askFallback(agent, signal, res)
+        if (decision === 'fallback') { res = fallbackResult(res, built.mode); break }
+        if (decision === 'retry') continue
+        break
+      }
+      if (!res.ok && !res.fallback && isLimited(res) && attempt >= 2) { if (await askFallback(agent, signal, res) === 'fallback') res = fallbackResult(res, built.mode) }
+      return res
     }
 
     async function coreExecute(rawArgs, exec) {
@@ -293,53 +317,50 @@ return {
       if (!exeOk) {
         begin(cwd)
         let res = { ok: false, status: 'AGY_UNAVAILABLE', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: 'agy executable not found: ' + resolveErr }
-        if (await askFallback(exec, res) === 'fallback') res = fallbackResult(res, built.mode)
+        if (await askFallback(exec ? exec.agent : undefined, exec ? exec.signal : undefined, res) === 'fallback') res = fallbackResult(res, built.mode)
         end(res, cwd); return res
       }
 
-      if (args.background && jobs && exec && exec.agent) {
+      const runInBackground = args.background !== false && !!(jobs && exec && exec.agent)
+      if (runInBackground) {
         try {
           begin(cwd)
+          let currentHandle = null
+          const onSpawn = function (handle) { currentHandle = handle }
           const jobId = jobs.start({ kind: 'bash', label: 'agy: ' + shortLabel(args.prompt), owner: exec.agent, run: function () {
-            const handle = subprocess.spawn({ argv: built.argv, cwd, stdio, graceMs: 5000 })
-            const disposeLive = startLiveParser(handle, cwd)
-            const done = handle.done.then(function (outcome) { disposeLive(); const s = readStreams(handle); const res = buildResult(parseStreamJson(s.stdoutText), outcome, built.mode, s.stderrText, s.stdoutText); end(res, cwd); return { status: res.ok ? 'completed' : 'failed', detail: 'agy ' + res.status, output: JSON.stringify(res) } }).catch(function (err) { disposeLive(); end({ ok: false, status: 'JOB_ERROR' }, cwd); return { status: 'failed', detail: String(err && err.message || err) } })
-            return { cancel: function () { try { handle.terminate() } catch (e) {} }, done: done }
+            const done = (async function () {
+              try {
+                const res = await executeWithFallback(built, cwd, exec.agent, undefined, onSpawn)
+                end(res, cwd)
+                return { status: res.ok ? 'completed' : 'failed', detail: 'agy ' + res.status, output: JSON.stringify(res) }
+              } catch (err) {
+                const res = { ok: false, status: 'JOB_ERROR', stderr: String(err && err.message || err) }
+                end(res, cwd)
+                return { status: 'failed', detail: String(err && err.message || err), output: JSON.stringify(res) }
+              }
+            })()
+            return {
+              cancel: function () { try { if (currentHandle) currentHandle.terminate() } catch (e) {} },
+              done: done
+            }
           } })
-          return { ok: true, background: true, jobId: String(jobId), mode: built.mode, note: 'agy running in background; collect with job_output ' + String(jobId) + '. Background failures do NOT open the fallback dialog; on failure re-run in foreground to be prompted.' }
+          return { ok: true, background: true, jobId: String(jobId), mode: built.mode, note: 'agy running in background; collect with job_output ' + String(jobId) + '. Failures open the fallback dialog while the job is in flight; collect with job_output to see the outcome (fallback=true means the user chose DSH-local; status QUOTA_BLOCKED means finish natively).' }
         } catch (e) { end({ ok: false, status: 'JOB_START_ERROR' }, cwd) }
       }
 
       begin(cwd)
       try {
-        let attempt = 0; let res
-        while (true) {
-          attempt += 1
-          const r = await runSync(built.argv, cwd, built.timeoutSec, exec ? exec.signal : undefined)
-          if (r.timedOut) {
-            // DSH 侧超时强制终止：明确报 HUNG_TIMEOUT（区别于解析失败），
-            // 附最后事件摘要供诊断；视为"受限"以触发回退弹窗（网络挂起场景）。
-            res = { ok: false, status: 'HUNG_TIMEOUT', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: r.outcome ? r.outcome.exitCode : null, mode: built.mode, stderr: 'agy did not finish within ' + built.timeoutSec + 's (DSH hard timeout). Last activity: ' + r.lastEventSummary + '. NOTE: if the task was a long-running script (build/test), raise timeoutSec; this was a hang guard, not necessarily a failure of agy.' }
-            break
-          }
-          res = buildResult(parseStreamJson(r.stdoutText), r.outcome, built.mode, r.stderrText, r.stdoutText)
-          if (res.ok || !isLimited(res) || attempt >= 2) break
-          const decision = await askFallback(exec, res)
-          if (decision === 'fallback') { res = fallbackResult(res, built.mode); break }
-          if (decision === 'retry') continue
-          break
-        }
-        if (!res.ok && !res.fallback && isLimited(res) && attempt >= 2) { if (await askFallback(exec, res) === 'fallback') res = fallbackResult(res, built.mode) }
+        const res = await executeWithFallback(built, cwd, exec ? exec.agent : undefined, exec ? exec.signal : undefined)
         end(res, cwd); return res
-      } catch (e) { const res = { ok: false, status: 'SPAWN_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: String(e && e.message || e) }; const out = (await askFallback(exec, res) === 'fallback') ? fallbackResult(res, built.mode) : res; end(out, cwd); return out }
+      } catch (e) { const res = { ok: false, status: 'SPAWN_ERROR', response: '', conversationId: null, durationSeconds: null, numTurns: null, totalTokens: null, exitCode: null, mode: built.mode, stderr: String(e && e.message || e) }; const out = (await askFallback(exec ? exec.agent : undefined, exec ? exec.signal : undefined, res) === 'fallback') ? fallbackResult(res, built.mode) : res; end(out, cwd); return out }
     }
 
     function renderResult(args, value) {
       const v = value || {}
-      if (v.background) return [{ type: 'text', text: 'agy dispatched in background (mode=' + v.mode + '). jobId=' + v.jobId + '. Collect with job_output.' }]
+      if (v.background) return [{ type: 'text', text: 'agy dispatched in background (mode=' + v.mode + '). jobId=' + v.jobId + '. Collect with job_output. Failures open the fallback dialog while the job is in flight; collect with job_output to see the outcome (fallback=true means the user chose DSH-local; status QUOTA_BLOCKED means finish natively).' }]
       if (v.fallback) return [{ type: 'text', text: 'agy 回退：用户选择使用 DSH 本地 API 配置（原因 ' + v.reason + '）。请改用原生工具/本地模型完成本任务，不要再调 agy。' }]
       if (v.status === 'QUOTA_BLOCKED') return [{ type: 'text', text: 'agy 未调用（5h 池子额度 <10%）：' + (v.stderr || '') + ' —— 请直接用原生工具/本地模型完成本任务。' }]
-      const head = 'agy ' + (v.ok ? 'OK' : 'FAILED') + ' [status=' + v.status + ' mode=' + v.mode + (v.conversationId ? ' conv=' + v.conversationId : '') + (v.totalTokens != null ? ' tokens=' + v.totalTokens : '') + (v.durationSeconds != null ? ' ' + v.durationSeconds + 's' : '') + ']'
+      const head = 'agy ' + (v.ok ? 'OK' : 'FAILED') + ' [status=' + v.status + ' mode=' + v.mode + (v.conversationId ? ' conv=' + v.conversationId : '') + (v.durationSeconds != null ? ' ' + v.durationSeconds + 's' : '') + ']'
       const body = v.response ? v.response : (v.stderr ? '[stderr] ' + v.stderr : (v.rawStdout ? '[raw] ' + v.rawStdout : ''))
       return [{ type: 'text', text: head + (body ? '\n\n' + body : '') }]
     }
@@ -365,7 +386,7 @@ return {
           lines.push('recent steps:')
           for (const e of v.trail.slice(-6)) { const a = e.args ? ' ' + JSON.stringify(e.args) : ''; lines.push('  [' + e.state + '] step ' + e.stepIndex + ' ' + e.tool + a) }
         }
-        if (v.lastStatus) lines.push('last: ' + v.lastStatus + (v.lastConversationId ? ' conv=' + v.lastConversationId : '') + (v.lastAt ? ' @ ' + new Date(v.lastAt).toISOString() : ''))
+        if (v.lastStatus) lines.push('last: ' + v.lastStatus + (v.lastConversationId ? ' conv=' + v.lastConversationId : '') + ' @ ' + new Date(v.lastAt).toISOString())
       }
       if (v.updatedAt) lines.push('updatedAt: ' + new Date(v.updatedAt).toISOString())
       return [{ type: 'text', text: lines.join('\n') }]
@@ -413,33 +434,48 @@ return {
     const OUT = { schema: { type: 'object', additionalProperties: true }, render: renderResult }
     const STATUS_OUT = { schema: { type: 'object', additionalProperties: true }, render: renderStatus }
 
-    harness.registerTool(ctx, harness.defineTool({ name: 'agy_run', description: 'Dispatch a coding/build/debug/investigation task to the local agy agent CLI and return its final answer. DSH fully controls agy (--dangerously-skip-permissions; agy never prompts). On rate-limit/network failure DSH pops a fallback dialog; fallback=true means finish with native tools. background=true returns a jobId. While it runs, call agy_status to watch what agy is doing live.', parameters: { prompt: { type: 'string', description: 'The full task/instruction for agy. Be complete and self-contained.', required: true }, mode: { type: 'string', enum: ['auto', 'plan', 'accept-edits'], description: 'auto follows DSH plan state; plan = no writes; accept-edits = allow edits.' }, model: { type: 'string', description: 'Optional agy model id — pick from the Gemini pool or utility models per the model-selection policy (use agy_quota to see the recommended:true list). Do NOT pass a Claude/GPT (3p) model.' }, effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort.' }, cwd: { type: 'string', description: 'Working directory for agy.' }, addDirs: { type: 'array', items: { type: 'string' }, description: 'Extra directories to add to agy workspace.' }, timeoutSec: { type: 'integer', description: 'Print timeout seconds (10-3600, default 300).' }, background: { type: 'boolean', description: 'Run as a background job and return a jobId.' } }, output: OUT, execute: function (args, exec) { return coreExecute(args, exec) } }))
+    harness.registerTool(ctx, harness.defineTool({ name: 'agy_run', description: 'Dispatch a coding/build/debug/investigation task to the local agy agent CLI and return its final answer. DSH fully controls agy (--dangerously-skip-permissions; agy never prompts). On rate-limit/network failure DSH pops a fallback dialog; fallback=true means finish with native tools. Runs in the background by default (returns a jobId immediately; collect with job_output); set background=false to block for the final answer. While it runs, call agy_status to watch what agy is doing live.', parameters: { prompt: { type: 'string', description: 'The task instruction for agy. On first dispatch for a topic, include a compact CONTEXT preamble (goal, repo root, key paths, decisions/constraints; point at paths, do not paste file contents — agy reads the repo itself). For follow-ups on the same topic, use agy_continue with latest=true or conversationId (agy keeps conversation context; state only what is new).', required: true }, mode: { type: 'string', enum: ['auto', 'plan', 'accept-edits'], description: 'auto follows DSH plan state; plan = no writes; accept-edits = allow edits.' }, model: { type: 'string', description: 'Optional agy model id — pick from the Gemini pool or utility models per the model-selection policy (use agy_quota to see the recommended:true list). Do NOT pass a Claude/GPT (3p) model.' }, effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort.' }, cwd: { type: 'string', description: 'Working directory for agy.' }, addDirs: { type: 'array', items: { type: 'string' }, description: 'Extra directories to add to agy workspace.' }, timeoutSec: { type: 'integer', description: 'Print timeout seconds (10-3600, default 600).' }, background: { type: 'boolean', description: 'Defaults to true: dispatch returns a jobId immediately; collect with job_output, watch progress with agy_status. Set false to block for the final answer.' } }, output: OUT, execute: function (args, exec) { return coreExecute(args, exec) } }))
 
-    harness.registerTool(ctx, harness.defineTool({ name: 'agy_continue', description: 'Continue an existing agy conversation with a follow-up prompt. Pass conversationId or set latest=true. Same DSH-controlled, no-prompt execution and same fallback dialog as agy_run.', parameters: { prompt: { type: 'string', description: 'Follow-up instruction for the ongoing agy conversation.', required: true }, conversationId: { type: 'string', description: 'agy conversation id to resume.' }, latest: { type: 'boolean', description: 'Continue the most recent agy conversation.' }, mode: { type: 'string', enum: ['auto', 'plan', 'accept-edits'], description: 'Execution mode.' }, model: { type: 'string', description: 'Optional agy model id — pick from the Gemini pool or utility models per the model-selection policy (use agy_quota to see the recommended:true list). Do NOT pass a Claude/GPT (3p) model.' }, effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort.' }, cwd: { type: 'string', description: 'Working directory for agy.' }, timeoutSec: { type: 'integer', description: 'Print timeout seconds (10-3600, default 300).' }, background: { type: 'boolean', description: 'Run as a background job and return a jobId.' } }, output: OUT, execute: function (args, exec) { const a = args || {}; const mapped = { prompt: a.prompt, mode: a.mode, model: a.model, effort: a.effort, cwd: a.cwd, timeoutSec: a.timeoutSec, background: a.background }; if (a.conversationId) mapped.conversationId = a.conversationId; else if (a.latest) mapped.continueLatest = true; return coreExecute(mapped, exec) } }))
+    harness.registerTool(ctx, harness.defineTool({ name: 'agy_continue', description: 'Continue an existing agy conversation with a follow-up prompt. Pass conversationId or set latest=true. Same DSH-controlled, no-prompt execution and same fallback dialog as agy_run.', parameters: { prompt: { type: 'string', description: 'Follow-up instruction for the ongoing agy conversation. State only what is new; agy preserves its conversation context.', required: true }, conversationId: { type: 'string', description: 'agy conversation id to resume.' }, latest: { type: 'boolean', description: 'Continue the most recent agy conversation.' }, mode: { type: 'string', enum: ['auto', 'plan', 'accept-edits'], description: 'Execution mode.' }, model: { type: 'string', description: 'Optional agy model id — pick from the Gemini pool or utility models per the model-selection policy (use agy_quota to see the recommended:true list). Do NOT pass a Claude/GPT (3p) model.' }, effort: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Optional reasoning effort.' }, cwd: { type: 'string', description: 'Working directory for agy.' }, timeoutSec: { type: 'integer', description: 'Print timeout seconds (10-3600, default 600).' }, background: { type: 'boolean', description: 'Defaults to true: dispatch returns a jobId immediately; collect with job_output, watch progress with agy_status. Set false to block for the final answer.' } }, output: OUT, execute: function (args, exec) { const a = args || {}; const mapped = { prompt: a.prompt, mode: a.mode, model: a.model, effort: a.effort, cwd: a.cwd, timeoutSec: a.timeoutSec, background: a.background }; if (a.conversationId) mapped.conversationId = a.conversationId; else if (a.latest) mapped.continueLatest = true; return coreExecute(mapped, exec) } }))
 
     harness.registerTool(ctx, harness.defineTool({ name: 'agy_status', description: 'Read a live snapshot of what the local agy agent is currently doing. Returns one section per project (working directory): running count, current step (tool name + arguments being executed, or agent_response thinking/typing), recent step trail, last completed run status + conversation id. Call this to check on an in-flight agy_run/agy_continue without waiting for it to finish.', parameters: { cwd: { type: 'string', description: 'Optional: filter the snapshot to a single project (working directory).' } }, output: STATUS_OUT, execute: function (args) { const a = args || {}; const snap = snapshot(); if (a.cwd) { const key = String(a.cwd); snap.projects = snap.projects.filter(function (p) { return p.cwd === key }); const g = snap.projects[0]; if (g) { snap.state = g.state; snap.running = g.running; snap.current = g.current; snap.trail = g.trail; snap.lastStatus = g.lastStatus; snap.lastAt = g.lastAt; snap.lastConversationId = g.lastConversationId; snap.fallbackActive = g.fallbackActive; snap.updatedAt = g.updatedAt } } return snap } }))
 
     harness.registerTool(ctx, harness.defineTool({ name: 'agy_quota', description: 'Query the Google AI plan (Antigravity OAuth consumer) quota pool behind the local agy CLI. Reads the Windows credential manager entry (gemini:antigravity) that agy wrote at login, refreshes the access token, then calls Google Cloud Code quota APIs: fetchAvailableModels (per-model remaining pool percentage) and retrieveUserQuotaSummary (grouped plan buckets: weekly + 5h windows). Returns { ok, models: [{name, percentage, resetTime, displayName}], groups: [{displayName, buckets: [{bucketId, window, remainingFraction, resetTime}]}], tier }. GATING RULE: only the Gemini 5h window decides whether agy can run this task — agy_run/agy_continue already refuse silently below 10% of the 5h pool, so you normally do not need to pre-check. The weekly window is NOT a per-task gate: a drained weekly bucket only means agy is a poor choice for the rest of the week (pick another subagent or your own tools), never a reason to abort or shrink the current task. If the credential is missing the tool returns { ok:false, error } and agy_run still works normally.', parameters: { summary: { type: 'boolean', description: 'Return only a compact summary (weekly buckets + top models).' } }, output: QUOTA_OUT, execute: async function (args) { const a = args || {}; const res = await cachedQuotaCheck(); if (res.ok && a.summary) { const weekly = (res.groups || []).flatMap(function (g) { return (g.buckets || []).filter(function (b) { return b.window === 'weekly' }).map(function (b) { return { g: g.displayName, id: b.bucketId, pct: Math.round((b.remainingFraction || 0) * 100), reset: b.resetTime } }) }); const top = (res.models || []).slice(0, 4).map(function (m) { return (m.displayName || m.name) + ' ' + m.percentage + '%' }).join(', '); return { ok: true, summary: { weekly: weekly, topModels: top }, models: res.models, groups: res.groups, tier: res.tier } } return res } }))
 
     const policyText = [
-      'agy-first execution policy (local agy CLI bridge, with fallback + live indicator + live status tool).',
+      'agy-first execution policy (local agy CLI bridge).',
       '',
-      'A local sub-agent CLI named "agy" is available through the agy_run and agy_continue tools. DSH fully controls agy: every invocation runs non-interactively with all permissions auto-approved, so agy never prompts and DSH decides all of its work. A header status light shows when agy is working — one light per project (working directory), so parallel runs in different projects are tracked separately; call agy_status any time to see what agy is doing right now (per project: current tool/step and recent trail).',
+      'Local agent CLI "agy" handles coding tasks under full DSH control (permissions auto-approved, never prompts). By default, agy runs in the background and returns a jobId immediately; collect results via job_output and watch live progress via agy_status anytime.',
       '',
-      'Priority rule for EVERY mode (normal, plan, accept-edits, subagent/workflow/ralph delegation, and goal rounds):',
-      '- For any real work — implementing features, editing/refactoring code, debugging, running builds, or multi-file investigation — prefer dispatching the task to agy_run FIRST with a complete, self-contained prompt.',
-      '- Use native read/write/shell tools mainly for quick read-only lookups and for the final build/test verification of what agy produced.',
-      '- In plan mode, call agy_run with mode=auto (or mode=plan); in accept-edits/normal mode agy_run applies edits directly.',
-      '- When you delegate to a DSH subagent or workflow, instruct that delegate to also prefer agy_run.',
-      '- For long-running tasks, call agy_run with background=true and collect the result with job_output; use agy_status to watch progress.',
+      'Decision table for tool selection:',
+      '- Single read/glob/grep or short (<30s) command -> Native tools.',
+      '- Implementing, editing, refactoring, debugging, builds, multi-file investigation -> agy_run.',
+      '- Follow-ups on the same topic -> agy_continue (with latest=true or conversationId; agy preserves session context).',
+      '- Final build/test verification of agy output -> Native tools.',
+      '- Image/video generation -> agy_run WITHOUT picking a model (agy selects the appropriate model).',
       '',
-      'Fallback protocol: when agy is rate-limited or the network is down, agy_run/agy_continue automatically pop a confirmation dialog asking the user whether to use the DSH local API config. If the returned result has fallback=true (status FALLBACK_TO_DSH), the user chose to fall back: complete the task with native DSH tools / the local model and DO NOT call agy again for this task. If ok=false without fallback, report the agy error. Never loop agy calls; never ask agy to call back into DSH.',
+      'Context protocol (one topic = one agy conversation):',
+      '- First dispatch on a topic: provide the task with a compact CONTEXT preamble (point to paths, do not paste file contents):',
+      '  CONTEXT: 2-6 lines — goal; repo root; key paths; decisions/constraints; current state.',
+      '  TASK: the complete instruction.',
+      '- Follow-ups: call agy_continue and state only what is new.',
       '',
-      'Model selection policy (v1.5.10): you decide which model agy uses, based on the task at hand. Call agy_quota first to see the available pool and per-model remaining %. Use the Gemini pool (gemini-* models) or the other utility models (tab_*, chat_*) — the recommended:true entries. Do NOT pass a Claude or GPT model (family claude/gpt, marked [3p: 不推荐]) to agy_run: those 3p models are effectively unusable on this plan and will fail or produce poor results. When the task is image generation / image editing, dispatch it straight to agy_run WITHOUT specifying a model: agy itself selects the right image model and handles it; do not filter or block image tasks.',
+      'Execution & Fallback protocol:',
+      '- Dispatch defaults to background=true (set background=false only to block). Collect via job_output.',
+      '- On rate-limit or network failure, a confirmation dialog opens in BOTH foreground and background while in flight.',
+      '- If result has fallback=true (status FALLBACK_TO_DSH), the user chose DSH-local: finish with native tools and NEVER call agy again for this task.',
+      '- If status is QUOTA_BLOCKED (Gemini 5h pool <10%), finish natively. Never loop agy calls; never ask agy to call back into DSH.',
       '',
-      'Quota guard (v1.5.13): the ONLY quota gate for a task is the Gemini 5h pool — below 10% agy_run/agy_continue SILENTLY refuse to call agy (status QUOTA_BLOCKED, no dialog, no user notification), because a drained 5h window means agy genuinely cannot work this round; finish the task with native tools instead. Weekly quota is NOT a task gate and is no longer checked on the call path: a low or exhausted weekly bucket only means agy is a poor pick for the rest of the week (prefer another subagent or your own tools next time) — never shrink, delay, or abandon the current task because of weekly usage.'
+      'Model selection & Quota guard:',
+      '- The Gemini 5h pool (<10% threshold) is enforced automatically as the sole per-task gate; do NOT pre-call agy_quota before every dispatch. Call agy_quota only when you want to compare model availability.',
+      '- Use Gemini pool (gemini-*) or utility models (tab_*, chat_*). Never pass Claude or GPT (3p) models.',
+      '- Weekly quota is NOT a per-task gate: low weekly quota only informs future planning, never aborts current work.'
     ].join('\n')
 
-    ctx.systemPrompt.section({ name: 'agy:policy', order: 5, text: policyText })
+    ctx.systemPrompt.section({
+      name: 'agy:policy',
+      order: (typeof ctx.systemPrompt.getSectionOrder === 'function' ? ctx.systemPrompt.getSectionOrder('TOOL_SUBAGENT') : 2800) + 10,
+      text: policyText
+    })
   }
 }

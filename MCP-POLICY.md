@@ -11,21 +11,25 @@ agy runs **fully non-interactively under host control** — permissions are
 auto-approved (`--dangerously-skip-permissions`), it never prompts, and it can
 edit files, run builds, and investigate multi-file code.
 
-## Priority rule — disclose and prefer
+## Priority rule — decision table and context pattern
 
-- For **real work** — implementing features, editing/refactoring code,
-  debugging, running builds, multi-file investigation — **prefer dispatching the
-  task to `agy_run` first**, with a complete, self-contained prompt.
-- Use your own native read/write/shell tools mainly for **quick read-only
-  lookups** and for the **final build/test verification** of what agy produced.
+### Tool Selection
+- **Single read/glob/grep or short (<30s) command** → Use native host tools.
+- **Implementing, editing, refactoring, debugging, builds, multi-file investigation** → Prefer `agy_run` first.
+- **Follow-ups on the same topic** → Use `agy_continue` with `conversationId` or `latest: true` (agy preserves conversation context).
+- **Final build/test verification of agy's output** → Use native host tools.
+- **Image/video generation** → Dispatch to `agy_run` without specifying a model.
+
+### Context Protocol (one topic = one agy conversation)
+- **First dispatch on a topic**: include a compact CONTEXT preamble (point to paths, do not paste file contents; agy reads the repo itself; timeoutSec defaults to 600s):
+  ```
+  CONTEXT: 2-6 lines — goal; repo root; key paths; decisions/constraints; current state.
+  TASK: the complete instruction.
+  ```
+- **Follow-ups**: call `agy_continue` and state only what is new.
 - When the task must not write files yet, call `agy_run` with `mode: "plan"`.
-- For follow-ups on an existing task, use `agy_continue` with the
-  `conversationId` from the previous result (or `latest: true`).
-- When you delegate to a sub-agent, tell it to also prefer `agy_run`.
-- While `agy_run`/`agy_continue` is running, you may call `agy_status` any time
-  to see what agy is doing right now — reported per project (working
-  directory), each with its current tool/step and recent trail — without
-  waiting for it to finish.
+- When you delegate to a sub-agent, instruct it to also follow this agy-first policy.
+- While `agy_run`/`agy_continue` is running, you may call `agy_status` anytime to see what agy is doing right now (reported per project/working directory, with current tool/step and recent trail) without waiting for completion.
 
 ## Fallback — never loop
 

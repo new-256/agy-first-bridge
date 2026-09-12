@@ -194,6 +194,13 @@
         provider: spawn
         toolName: subagent
         backgroundMode: continuable
+        persona: >-
+          Delegation directive: you are a child agent in an agy-first session. Before
+          doing any coding, building, debugging, or multi-file investigation work
+          yourself, check whether the agy_run tool (or mcp__agy__agy_run) is available
+          to you; if it is, dispatch that work to agy first per the agy-first policy,
+          then verify its output with your own read-only tools. Reserve your own
+          direct work for quick read-only lookups and final verification.
 
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
@@ -201,6 +208,13 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
+        persona: >-
+          Delegation directive: you are a child agent in an agy-first session. Before
+          doing any coding, building, debugging, or multi-file investigation work
+          yourself, check whether the agy_run tool (or mcp__agy__agy_run) is available
+          to you; if it is, dispatch that work to agy first per the agy-first policy,
+          then verify its output with your own read-only tools. Reserve your own
+          direct work for quick read-only lookups and final verification.
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this

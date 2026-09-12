@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]（支持声明与交接，不发布 npm）
+## [Unreleased]
 
 ### Added
 - `docs/SUPPORT.md`：DSH 逐版本兼容性声明。基于对 `@deepseek-ai/dsh-client-modules@0.0.1-rc.1 .. 0.1.5-rc.2`、`@deepseek-ai/dsh-web-app@0.0.1-rc.1 .. 0.1.5-rc.2` 共 16 个历史 tarball 的逐字节指纹比对；支持下限定为 `@deepseek-ai/dsh ≥ 0.1.2-rc.1`（arrive() 契约从 0.0.1 起就存在，但 `reloadUrls` 等配套此版才补齐）。
@@ -11,6 +11,10 @@ All notable changes to this project are documented here. Format loosely follows
 - `docs/handover/audit/`：回测证据 JSON 与关键版本 client.js 的 arrive() 契约指纹（含 SHA256），可独立复算。
 
 ### Changed
+- **重构调用范式：agy_run 引入紧凑上下文包，后续调用转由 agy_continue 延续**（**根因：与原生 subagent_fork 的上下文继承不对称**）。旧版 `agy_run` 强制要求提示词“完整且自包含”，将全量上下文序列化的沉重负担强加给调用模型，导致模型更倾向于选择自动继承历史轮次的 `subagent_fork`。现改为在首派时注入 2-6 行 compact CONTEXT 前置块（仅指明目标、仓库根目录、关键路径与既有约束，严禁贴文件全文，由 agy 自行查阅），同一主题后续任务转由 `agy_continue` 沿用内部会话；两工具的超时默认值统一由 300s 提升至 600s（`timeoutSec` 默认 600）。
+- **执行形态默认后台化，决策与回退循环闭环下沉至 Job**（**根因：执行形态不对称与后台“失败无回退”的劝退设计**）。原生子代理默认后台运行，而旧版 `agy_run` 默认前台阻塞，且其后台分支硬编码“后台失败不弹回退框”，导致后台体验劣质。现改为当环境支持 jobs 时默认 `background: true`（立即返回 jobId 并通过 `job_output` 收集、`agy_status` 观察进度；显式传 `false` 才阻塞）；将核心决策循环（运行 → 限流/网络受限时弹窗询问 → 重试/回退/返回错误，最多 2 次）抽象为通用逻辑并在后台 Job 中完整支持（后台 Job 运行中遇到受限同样触发用户回退弹窗，且绝不透传过期 signal）。用户选择回退后 Job 输出结构一致的 `FALLBACK_TO_DSH` 结果。注意：5h 配额阻断（`QUOTA_BLOCKED`，Gemini 5h 池子 <10%）依然保持完全同步拦截，不进入后台 Job。
+- **系统提示词段落后移对齐注意力，注入子代理 Persona，精简政策为决策表**（**根因：政策注入位置劣势、文本自相矛盾与昂贵感暗号**）。旧版 `agy:policy` 位于 `order: 5`（最顶部），被位于 `order: 2800`（`TOOL_SUBAGENT`，紧邻工具目录）的原生子代理引导抢占注意力。现将注入顺序改为动态获取 `TOOL_SUBAGENT` 顺序并置为 `TOOL_SUBAGENT + 10`（降级 2810）；在 `agent.cordis.yml` 的 `tool-subagent` 与 `tool-subagent-fork` 预设中均注入委托导向的 English `persona`，明确要求子代理在写代码/重构/跨文件排查前先派发 agy；将政策文本重构为紧凑决策表（总长度不增加），消除“先查 agy_quota”与工具声明中“无需预检”的自相矛盾，删除结果头行产生开销暗示的 `tokens=NNNNN`（仅保留在结构化结果内部）。
+- **同步 MCP-POLICY 文档与 MCP server / dynamic 副本**：更新根目录 `MCP-POLICY.md` 与 `MCP-POLICY.zh.md` 的优先规则与上下文包模式（保持外部同步 MCP 调用的契约范围，不引入 DSH 后台概念，超时默认同步至 600s）；`mcp/agy-mcp-server.mjs`（版本保持 1.6.2）与 `dynamic/host.js` 同步更新参数提示、默认超时 600s、去 tokens 渲染头及系统提示词位置。
 - README 版本表回填 v1.6.1 / v1.6.2 行；新增"与 DSH 的版本兼容性（速查）"一节，明确支持下限 `0.1.2-rc.1`。
 - Git tag 补齐：`v1.5.15` / `v1.6.0` / `v1.6.2`（v1.6.1 已存在）；GitHub Release 对应三版已建立，v1.6.2 置为 Latest。
 
