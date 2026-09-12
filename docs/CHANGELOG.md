@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [1.7.0] - 2026-09-12
 
 ### Added
 - `docs/SUPPORT.md`：DSH 逐版本兼容性声明。基于对 `@deepseek-ai/dsh-client-modules@0.0.1-rc.1 .. 0.1.5-rc.2`、`@deepseek-ai/dsh-web-app@0.0.1-rc.1 .. 0.1.5-rc.2` 共 16 个历史 tarball 的逐字节指纹比对；支持下限定为 `@deepseek-ai/dsh ≥ 0.1.2-rc.1`（arrive() 契约从 0.0.1 起就存在，但 `reloadUrls` 等配套此版才补齐）。
