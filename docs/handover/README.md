@@ -31,7 +31,7 @@ npm view agy-first-bridge dist-tags.latest   # 应为 1.7.0
 |---|---|---|
 | 宿主 MCP 全局 | `cordis.patch.yml` 的 `mcp-agy-global` 行 → `dsh-home\bin\agy-mcp-server.mjs`（v1.7.0，绝对路径） | ✅ 实测 SUCCESS（会话内 `mcp__agy__*` 工具来源）；09-12 已重部署 1.7.0，**待重启生效** |
 | Agent preset | `.agent-presets\cordis-agy\agy-first-bridge.mjs`（默认 preset：原生 agy_run/continue/status/quota + agy-first 策略） | ✅ 实测 SUCCESS；09-12 已全量拷贝 1.7.0（AGY_QUOTA_SCRIPT 覆盖到位——"拷贝略旧"缺口关闭——附带激励结构修复：上下文协议 / 默认后台+回退闭环 / 决策点钩子），**待重启生效** |
-| Profile bundle | `dsh-home\profiles\web`：bundles 含 agy-first-bridge，依赖 `^1.6.2` registry 安装 | ✅ 09-12 升级 1.7.0：npm pack tgz SHA512 与 registry 一致、18 个 shipped 文件 ≡ v1.7.0 tag（EOL 归一化 0 diff）、pnpm-lock 三处对齐（importers/packages/snapshots）；旧态全量备份在 `dsh-home\backups\redeploy-20260912-v1.7.0\`，**待重启生效** |
+| Profile bundle | `dsh-home\profiles\web`：bundles 含 agy-first-bridge，依赖 `^1.7.0` registry 安装（2026-09-12 起） | ✅ 09-12 升级 1.7.0：npm pack tgz SHA512 与 registry 一致、18 个 shipped 文件 ≡ v1.7.0 tag（EOL 归一化 0 diff）、pnpm-lock 三处对齐（importers/packages/snapshots）；旧态全量备份在 `dsh-home\backups\redeploy-20260912-v1.7.0\`，**待重启生效** |
 
 - **为什么搬家会断**：profile 层当初是开发态接线——`file:` 依赖 + junction 直指仓库工作副本（配合 `patchReload: live`，改仓即生效、免发版）。npm 上的 1.6.2 本身完好；断的只是这条指向桌面源码目录的开发链。对照：同 profile 的 codebuddy-first-bridge 走 `^1.1.7` registry 安装，不受仓库位置影响。
 - **1.6.2 闭环实测通过（09-12 重启后）**：`mcp__agy__agy_run` 调用 → `mcp-live.json` 实时写入（conv id 一致、含 agy 步骤轨迹）；60s 轮询 `GET /agy-indicator/status` 全程 `state=running, projects=[agy-first-bridge:running:r1]` —— mcp-live.json 合并路径正常（1.6.2 修复项）。调用完成后 projects 清空属 ok 态 8s 保留窗过期的正常行为，非故障。

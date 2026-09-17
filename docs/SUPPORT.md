@@ -69,13 +69,14 @@ throw new Error(`client-modules: bundle ${url} loaded without registering "${id}
 | `1.5.15` | 双包时代的"独立指示灯包"最后一个版本 | 不与"主包型（agy-first-bridge）"互操作；不再推荐装 |
 | `1.6.0` | 双包合一（灯、MCP server、preset 并进 agy-first-bridge） | 引入 `client.js` 的 id 与 graph row id 不一致的**隐藏**问题 |
 | `1.6.1` | **修复** 上述 id 失配（崩溃根因）；新增 `scripts/verify.mjs` 发布前闸门 | 升到此版本才能避免"插件页全灭" |
-| `1.6.2`（latest） | **修复** "合并包布局下 MCP→灯 桥文件路径错位"（host 先前找 `<pkg>/home-plugin/agy-indicator/mcp-live.json`，改用 `DSH_HOME` 锚定到 `<dsh-home>/plugins/agy-indicator/mcp-live.json`） | 任何"以 junction/npm 形式装进 profiles/web/node_modules/agy-first-bridge"的部署都必须升到此版本，否则灯恒 idle |
+| `1.7.0`（latest） | **激励结构修复**（根因分析驱动）：上下文协议（CONTEXT 前置块 + `agy_continue` 延续）、默认后台化（决策与回退循环下沉至 Job，后台失败同样弹回退框，后台获得 DSH 硬超时防线）、决策点钩子（`agy:policy` 移至 `TOOL_SUBAGENT+10`、子代理 persona 注入、政策改紧凑决策表）；timeoutSec 默认 600s，结果头行去 `tokens=` | 无兼容性硬要求；任何 ≥1.6.2 的部署可直接升级。preset 层需手动同步拷贝（`preset/agy-first/*`），MCP bin 层需替换文件 |
+| `1.6.2` | **修复** "合并包布局下 MCP→灯 桥文件路径错位"（host 先前找 `<pkg>/home-plugin/agy-indicator/mcp-live.json`，改用 `DSH_HOME` 锚定到 `<dsh-home>/plugins/agy-indicator/mcp-live.json`） | 任何"以 junction/npm 形式装进 profiles/web/node_modules/agy-first-bridge"的部署都必须升到此版本，否则灯恒 idle |
 
 ## npm 包对照
 
 | npm 包名 | 状态 | 说明 |
 |---|---|---|
-| `agy-first-bridge` | **mainline，latest=1.6.2** | 当前分发入口；preset、家级灯、MCP server 全在此包 |
+| `agy-first-bridge` | **mainline，latest=1.7.0** | 当前分发入口；preset、家级灯、MCP server 全在此包 |
 | `agy-indicator` | **deprecated（保留 1.5.15）** | 1.6.0 起不再单独发布，保留只是不破坏历史 lock / 部署 |
 
 ## codebuddy 侧参考（本会话顺手治理）

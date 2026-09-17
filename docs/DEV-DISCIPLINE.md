@@ -20,7 +20,7 @@
 
 ## 七条纪律
 
-1. **交付即制品**：版本发布并验证通过后，本机部署必须切换到**制品形态**（registry 安装，如 `^1.6.2`）。禁止让 `file:` 依赖 / junction 直连仓库工作副本的开发态接线跨会话存活。
+1. **交付即制品**：版本发布并验证通过后，本机部署必须切换到**制品形态**（registry 安装，如 `^1.7.0`）。禁止让 `file:` 依赖 / junction 直连仓库工作副本的开发态接线跨会话存活。
 2. **开发态是临时的**：开发态接线（`file:` + junction + `patchReload: live`）仅限活跃开发会话内使用，用于「改仓即生效、免发版」；会话收尾时必须拆除，或在交接文档中显式标注「当前为开发态 + 接线位置」。
 3. **路径解耦**：部署配置（`package.json` / `pnpm-lock.yaml` / `cordis.patch.yml`）中禁止出现指向**易变路径**（桌面、用户目录、可迁移的仓库位置）的引用。一律使用 registry 包名或长期稳定路径；确需本地引用（如 tgz），把 tgz 本身视为制品并放在稳定位置。
 4. **完整性校验**：从制品源安装必须校验完整性——`npm pack` 下载后比对 tgz SHA512 与 `npm view <pkg>@<ver> dist.integrity`，逐字节一致才算数；手工部署也不例外。
@@ -34,7 +34,7 @@
 | --- | --- | --- |
 | 宿主 MCP 全局 | `dsh-home\cordis.patch.yml` 的 `mcp-agy-global` 行 → `bin\agy-mcp-server.mjs` | 稳定绝对路径 + 自包含拷贝（路径解耦 ✓） |
 | Agent preset | `dsh-home\.agent-presets\cordis-agy\agy-first-bridge.mjs` | 自包含拷贝（不依赖仓库位置 ✓；重大修复需手动同步） |
-| Profile bundle | `dsh-home\profiles\web`（依赖 `^1.6.2` registry 安装） | **制品态**（2026-09-12 闭环修复后 ✓） |
+| Profile bundle | `dsh-home\profiles\web`（依赖 `^1.7.0` registry 安装；2026-09-12 由 1.6.2 升级，SHA512 + tag 一致性核验通过） | **制品态**（2026-09-12 闭环修复后 ✓） |
 
 ## 事故背景（为什么有这份纪律）
 

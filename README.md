@@ -202,7 +202,7 @@ agy-first-bridge/
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
    ├─ SUPPORT.md                   # DSH 逐版本支持声明（基于逐 tarball 指纹回测）
-   ├─ CHANGELOG.md                 # 版本历史（1.0.0 → 1.6.2）
+   ├─ CHANGELOG.md                 # 版本历史（1.0.0 → 1.7.0）
    ├─ issues/BACKEND-ISSUES.md     # 提给 DSH/桌面壳上游的 issue 草案（item B/C）
    └─ handover/                    # 会话交接资料（audit 证据 + 客户端契约指纹）
    └─ en/                          # 英文文档
@@ -214,6 +214,7 @@ agy-first-bridge/
 
 | 版本 | 适配 DSH | 内容 |
 | --- | --- | --- |
+| [v1.7.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.7.0) | ≥ 0.1.2-rc.1（建议 ≥0.1.3-alpha.2；实测 0.1.5-rc.1） | **激励结构修复——让 agy-first 政策真正赢得模型决策**：① **上下文协议**：agy_run 首派改用紧凑 CONTEXT 前置块（指路径不贴内容，agy 自读仓库），同主题后续走 `agy_continue` 沿用会话（对齐 subagent_fork 的上下文体验）；② **默认后台化**：jobs 可用时 `background` 缺省 true，决策循环（运行→受限弹窗→重试/回退）下沉进 Job——后台失败同样弹回退框（废除旧"后台不弹框"的劝退设计），后台 Job 同时获得 DSH 硬超时防线；③ **决策点钩子**：`agy:policy` 段 order 5 → `TOOL_SUBAGENT+10`（紧随子代理引导、工具目录之前），两个 tool-subagent 行注入 persona，政策文本重写为紧凑决策表（"quick"钉死 <30s 判据、消除 agy_quota 预检矛盾）；附带 timeoutSec 默认 300→600s、结果头行去 `tokens=`（数据保留在 JSON 内） |
 | [v1.6.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.2) | ≥ 0.1.2-rc.1（建议 ≥0.1.3-alpha.2；实测 0.1.5-rc.1） | **修复合并包装下状态灯恒 idle**：host 半不再以 `import.meta.url` 找 `mcp-live.json`，改为 `AGY_MCP_LIVE_FILE` → `DSH_HOME` → `%APPDATA%\DSH Desktop\dsh-home` → `~/.dsh` 锚定，对齐 `dsh-plugin-manager-plus` 的 detectDshHome；verify 闸门加路径回归护栏 |
 | [v1.6.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.1) | ≥ 0.1.2-rc.1 | **修复整屏崩溃（全新安装 `Failed to load plugins`）**：client.js 里 `__ModuleLoader__.load` 的 id 改为 npm 包名 `agy-first-bridge`（1.6.0 写成了 `agy-indicator`，违背 dsh-client-modules `arrive()` 的 id 契约）；新增 `scripts/verify.mjs` 22 项发布前闸门（含 id 契约和版本三锁） |
 | [v1.6.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.0) | 0.1.3-alpha.2 | **双包合一**：灯并入主包 `agy-first-bridge`（主包 `package.json` 增加 DSH 插件面——`main` → 灯 Host 半、`exports` 双面、`dsh.bundle.patch`；`dsh plugin --profile web add agy-first-bridge` 单命令装灯），独立 npm 包 `agy-indicator` 弃用留档。⚠️ 存在两处后继修复，请直接使用 ≥v1.6.2 |
