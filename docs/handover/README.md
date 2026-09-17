@@ -36,7 +36,7 @@ npm view agy-first-bridge dist-tags.latest   # 应为 1.7.0
 - **为什么搬家会断**：profile 层当初是开发态接线——`file:` 依赖 + junction 直指仓库工作副本（配合 `patchReload: live`，改仓即生效、免发版）。npm 上的 1.6.2 本身完好；断的只是这条指向桌面源码目录的开发链。对照：同 profile 的 codebuddy-first-bridge 走 `^1.1.7` registry 安装，不受仓库位置影响。
 - **1.6.2 闭环实测通过（09-12 重启后）**：`mcp__agy__agy_run` 调用 → `mcp-live.json` 实时写入（conv id 一致、含 agy 步骤轨迹）；60s 轮询 `GET /agy-indicator/status` 全程 `state=running, projects=[agy-first-bridge:running:r1]` —— mcp-live.json 合并路径正常（1.6.2 修复项）。调用完成后 projects 清空属 ok 态 8s 保留窗过期的正常行为，非故障。
 - **遗留谜团已关闭（09-12）**：重启前 `/agy-indicator/status` 由磁盘上找不到的 1.5.15 时代旧实现应答（已排除宿主 patch、全部 bundle 包、preset、backend、app.asar、updater 暂存）；重启后该路由被 1.6.2 实现接管（如上实测），旧实现随重启消失——来源无从、也不再需要追究。
-- **1.7.0 重部署（09-12，待重启验证清单）**：三层已更新（见上表），重启 DSH Desktop 后在新会话验证——①系统提示中 agy:policy 段应位于 subagent 引导之后（order = TOOL_SUBAGENT+10）且为紧凑决策表；②agy_run 缺省后台（立即返回 jobId，job_output 收集）；③结果头行无 `tokens=`；④timeoutSec 默认 600；⑤子代理系统提示含 persona 委托指令。
+- **1.7.0 重部署（09-12，待重启验证清单）**：三层已更新（见上表），重启 DSH Desktop 后在新会话验证——①系统提示中 agy:policy 段应位于 subagent 引导之后（order = TOOL_SUBAGENT+10）且为紧凑决策表；②agy_run 缺省后台（立即返回 jobId，job_output 收集）；③结果头行无 `tokens=`；④timeoutSec 默认 600；⑤子代理系统提示含 persona 委托指令。**闭环备案提交**：`145251b`（v1.7.0 发版）/ `db41ee1`（三层部署备案）/ `59e7fcf`（版本声明全量对齐：双语版本表 + latest 标记 + 制品声明 + profile 依赖 `^1.7.0`）。
 - 家级 `agy-indicator` 独立行已注释退役；`dsh-home\plugins\agy-indicator\` 现仅存 MCP 子进程写的 `mcp-live.json` 桥接快照（1.6.2 修的正是该文件路径解析）。旧包备份（含 `agy-indicator.bak-1.5.15` 完整旧实现）在 `dsh-home\backups\pkg-20260910/`；`bin\codebuddy-mcp-server.mjs` = v1.1.9（已同步）。
 
 ## 维护高频事项
