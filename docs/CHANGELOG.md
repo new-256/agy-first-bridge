@@ -3,6 +3,33 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.1] - 2026-09-23
+
+### Fixed
+- **修复 agent preset 在新版 DSH 上从预设花名册彻底消失（注册机制被上游弃用）—— 这是本次迭代的主根因**。DSH 0.1.6+ 弃用了旧版预设机制：`$DSH_HOME/.agent-presets/<id>/` 目录（含 `preset.yml` + `agent.cordis.yml`）**不再被任何代码读取**（官方 `editing-cordis-compositions` skill 明言 "Nothing reads that directory any more"），预设必须以 bundle patch 里的 `@deepseek-ai/dsh-agent-preset` **声明行**注册。症状：升级后端到 0.1.7-rc.1 后，`cordis-agy` 从 registry 消失，GUI 报 `Unknown agent preset: cordis-agy (gateway/internal)`，所有记录 `agentPreset: cordis-agy` 的旧会话 resume 失败、无法切换模型。修复方式：按官方迁移指引，在包内 bundle patch（`home-plugin/agy-indicator/cordis.patch.yml`）新增 `preset-cordis-agy` 声明行 —— `id: cordis-agy`（旧会话头引用此 id，不可改）、`name`/`description` 取自 `preset.yml`、`order: 5`、`plugins` 从 `agent.cordis.yml` verbatim 转录；声明行由新脚本 `scripts/gen-preset-decl.mjs` 生成（改预设内容后重跑生成器，勿手改缩进块）。实测：`agentPresets/list` RPC 返回无 `broken`、GUI 模式菜单出现 "Agy-First 执行代理"、新建会话徽章与 "AGY 就绪" 状态灯均在、模型正常应答。
+- **桥接插件行改用裸子路径解析（`agy-first-bridge/preset-plugin`）**。preset mount 的 `baseUrl` 不指向包内任何已知目录（实测 `./preset/...` 与 `../../preset/...` 两种相对形态都让 `Entry._init` 的 import 永久挂起 → `auditRows` 报 `never started`）。而 patch 顶层的 `./` 相对行会被 `anchorInsertedPluginNames` 预解析成绝对 URL，但**嵌套在 `config.plugins` 深处的行不会**。最终形态：bridge 行 `name` 用裸子路径 `agy-first-bridge/preset-plugin`，经 `package.json` 新增的 `"./preset-plugin"` exports 子路径定位 `preset/agy-first/agy-first-bridge.mjs` —— 与 host 侧灯行同款 Node 解析机制，机器无关、npm 可移植（绝对 file URL 写死仅在诊断中验证过语义，不进发布件）。
+- **修复 agent preset 在新版 DSH 上整体挂载失败（工作流引擎被上游改名）**。DSH 后端把工作流引擎包从 `@deepseek-ai/dsh-workflow-worker-thread` 改名为 `@deepseek-ai/dsh-workflow-ptc`，翻转点在 `@deepseek-ai/dsh-base@0.1.6-alpha.1`（已逐版本拉 tarball 比对 `dependencies` 证实：≤0.1.5-rc.3 全部是 worker-thread，≥0.1.6-alpha.1 全部是 workflow-ptc）。`preset/agy-first/agent.cordis.yml` 的 `workflow-worker-thread` 行因此在 0.1.6-alpha.1+ 上 import 失败，而 `@deepseek-ai/dsh-agent-preset-registry` 的 `auditRows()` 只要发现**任一 enabled 行**导入失败就 `throw`，**拒绝整个 preset 挂载** —— 症状是 agy-first 预设整体不可用（不是只丢工作流工具）。本机部署副本此前已被手工热修但从未回流仓库，故 npm 上的 1.7.0 仍受影响。
+
+- **为什么不是简单改名**：两条发布线都在服役，`npm latest = 0.1.5-rc.3` 仍发 `worker-thread`，而 `next`/`alpha = 0.1.7-*` 已发 `workflow-ptc`（`dist-tags` 实测）。写死任一个都会打断另一条线。而 preset 行的 `name` 是**原样送进 `import()`** 的（只有 `config` / `disabled` 会过 `interpolate()`），**单行无法选包**。
+
+  现改为**两行都声明、各自用 `!!js disabled` 自证**：守卫经 `process.getBuiltinModule('node:module').createRequire(process.argv[1])` 探测运行中 CLI 自身的解析基准（`argv[1]` 即活的 `dsh/lib/bin.js`，与 loader 的 import 同树），`resolve()` 命中哪个包就只留哪一行。三条路径实测：
+  - modern 树（有 ptc）→ `workflow-ptc` 启用 / worker-thread 禁用
+  - legacy 树（有 worker-thread）→ `workflow-ptc` 禁用 / worker-thread 启用
+  - 未知树（两者都无）→ 两行都禁用，**preset 仍能挂载**（不再因缺包而整体失败）
+
+  守卫永不抛异常（抛异常会让 `composition-inventory` 把该行判为 `'conditional'`，行为不可预期）；`!!js` 方言由 `cordis-plugin-include` 提供，`^1.0.7` 自 dsh 0.1.2-rc.1 起即存在，覆盖全部受支持范围。
+
+### Added
+- `scripts/gen-preset-decl.mjs`：从 `preset/agy-first/agent.cordis.yml` verbatim 转录生成 bundle patch 里的 `preset-cordis-agy` 声明行（缩进 +10 对齐官方 `presets/*.patch.yml` 模板；bridge 行 `name` 改写为裸子路径）。改预设内容后重跑 `node scripts/gen-preset-decl.mjs` 即可，不要手改 plugins 缩进块。
+- `scripts/verify.mjs` 新增 §6 发布闸门：钉死两个引擎行必须**同时存在**、各自带 `!!js disabled` 守卫、守卫必须基于 `process.argv[1]` + `createRequire` 探测，且不得被无条件 `disabled: true`。防止后人"简化"回单行写死包名而重新引入整预设挂载失败。
+- `scripts/verify.mjs` 新增 §7 发布闸门：钉死 bundle patch 声明行存在、`config.id === 'cordis-agy'`、bridge 行用裸子路径、`package.json` 导出 `./preset-plugin` 子路径，以及 **plugins 块与源文件逐行 verbatim 一致**（310 行全量比对，改了源文件忘跑生成器立即 FAIL）。
+- `tests/preset-workflow.test.mjs`：语义级回归。用本机 DSH 本体自带的 `entryListSchema`（js-yaml + `!!js` 方言）解析仓库 preset，再用 `cordis-plugin-loader` 的 `evaluate()`（preset 挂载时真正使用的求值器）在模拟的 modern / legacy / 未知三种解析树下断言"恰好一个引擎行启用、且守卫不抛异常"。本机无 DSH 时明确 SKIP，不伪装通过。
+
+### Changed
+- **回填 2026-09-22 的部署侧热修（quota 兜底路径）到仓库**。`preset/agy-first/agy-first-bridge.mjs` 的 `QUOTA_FALLBACK_SCRIPTS` 原指向 `C:\Users\lcl\Desktop\agy-first-bridge\bin\agy-quota.mjs`（dev 仓库已迁移 → 路径失效）。该修复 9/22 只改了部署副本、未回流，v1.7.1 将其回填：兜底列表改为 npm 包内副本（`dsh-home\profiles\web\node_modules\agy-first-bridge\bin\agy-quota.mjs`）+ 稳定部署副本（`dsh-home\bin\agy-quota.mjs`）两条独立冗余路径，并附带溯源注释。回填后 `preset/agy-first/` 与部署件（`dsh-home\.agent-presets\cordis-agy\`）字节一致。
+- **本地部署同步**：`profiles/web/node_modules/agy-first-bridge/` 内的 `package.json`（+exports 子路径）、`home-plugin/agy-indicator/cordis.patch.yml`（+预设声明行）、`preset/agy-first/*`（workflow 双守卫行 + 回填的 quota 兜底）与仓库逐字节一致；legacy 目录 `dsh-home/.agent-presets/cordis-agy/` 同步保持一致（新版已不读，留作回滚锚点）。旧会话在**重启 DSH Desktop 后**即可正常 resume（预设注册发生在 boot 时）。
+- 版本号四处同步至 `1.7.1`：`package.json`、`mcp/agy-mcp-server.mjs` 的 `VERSION`、`home-plugin/agy-indicator/package.json`、本 CHANGELOG 顶部。
+
 ## [1.7.0] - 2026-09-12
 
 ### Added

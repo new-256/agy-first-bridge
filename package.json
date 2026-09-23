@@ -1,7 +1,7 @@
 {
   "name": "agy-first-bridge",
-  "version": "1.7.0",
-  "description": "agy-first bridge for DeepSeek Harness (DSH): prioritize the local agy CLI in every mode (full DSH control, no prompts), with a rate-limit/network fallback dialog, a live status light (dynamic form + home-level plugin), and a zero-dependency MCP server so any MCP-capable agent (Claude Code / Codex / Cherry Studio …) discovers agy itself. Single npm package: install the home-level status light via `dsh plugin --profile web add agy-first-bridge`. v1.6.1 fixed a client-module registration id mismatch; v1.6.2 fixes the MCP→light file path under the merged-package layout. v1.7.0 realigns the incentive structure so the policy actually wins model decisions: context-pack first dispatch + agy_continue follow-ups, background-by-default with the fallback dialog closing inside the job, and a compact decision-table policy positioned right after the subagent guidance.",
+  "version": "1.7.1",
+  "description": "agy-first bridge for DeepSeek Harness (DSH): prioritize the local agy CLI in every mode (full DSH control, no prompts), with a rate-limit/network fallback dialog, a live status light (dynamic form + home-level plugin), and a zero-dependency MCP server so any MCP-capable agent (Claude Code / Codex / Cherry Studio …) discovers agy itself. Single npm package: install the home-level status light via `dsh plugin --profile web add agy-first-bridge`. v1.6.1 fixed a client-module registration id mismatch; v1.6.2 fixes the MCP→light file path under the merged-package layout. v1.7.0 realigns the incentive structure so the policy actually wins model decisions. v1.7.1 fixes the agent preset against the upstream workflow-engine rename (dsh-workflow-worker-thread → dsh-workflow-ptc at dsh-base 0.1.6-alpha.1) with a self-probing dual row, so the preset mounts on every release line again.",
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -9,12 +9,14 @@
   "scripts": {
     "verify": "node scripts/verify.mjs",
     "check": "node mcp/agy-mcp-server.mjs --check && node scripts/verify.mjs",
+    "test": "node tests/preset-resolve.test.mjs && node tests/preset-workflow.test.mjs",
     "prepack": "node scripts/verify.mjs"
   },
   "main": "./home-plugin/agy-indicator/lib/index.mjs",
   "exports": {
     ".": "./home-plugin/agy-indicator/lib/index.mjs",
     "./client": "./home-plugin/agy-indicator/lib/client.js",
+    "./preset-plugin": "./preset/agy-first/agy-first-bridge.mjs",
     "./package.json": "./package.json"
   },
   "dsh": {

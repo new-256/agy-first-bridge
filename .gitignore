@@ -20,3 +20,7 @@ yarn-error.log*
 *.log
 tmp/
 .tmp/
+.tmp-workflow-test/
+.probe/
+agy-test/
+__pycache__/

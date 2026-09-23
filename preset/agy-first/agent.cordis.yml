@@ -238,8 +238,35 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
+    # The workflow ENGINE was renamed upstream: `@deepseek-ai/dsh-workflow-worker-thread`
+    # through dsh-base 0.1.5-rc.3, `@deepseek-ai/dsh-workflow-ptc` from 0.1.6-alpha.1
+    # onward. Both are still the CURRENT tag of some release line — npm's `latest`
+    # (0.1.5-rc.3) ships worker-thread while `next`/`alpha` (0.1.7-*) ship ptc — so a
+    # plain rename breaks whichever line it does not name.
+    #
+    # A row's `name` is imported verbatim (only `config`/`disabled` go through
+    # `interpolate()`), so ONE row cannot pick the package. Instead both rows are
+    # declared and each disables itself when it is not the engine this runtime ships.
+    # Exactly one survives on every release line, and neither resolves on an unknown
+    # tree — where both stay disabled and the preset still mounts, instead of failing
+    # the whole mount. (`auditRows()` in dsh-agent-preset-registry rejects the entire
+    # preset when any enabled row fails to import, so an unresolvable row is fatal.)
+    #
+    # The probe reads the running CLI's own resolution base via `process.argv[1]`
+    # (the live `dsh/lib/bin.js`), which is the same tree the loader imports from.
+    # `!!js` scalars are supported across the whole supported range (cordis-plugin-include
+    # ^1.0.7, present since dsh 0.1.2-rc.1).
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
+      disabled: !!js >-
+        (() => { try { return !process.getBuiltinModule('node:module').createRequire(process.argv[1]).resolve('@deepseek-ai/dsh-workflow-ptc') } catch { return true } })()
+      config:
+        provider: spawn
+
     - id: workflow-worker-thread
       name: '@deepseek-ai/dsh-workflow-worker-thread'
+      disabled: !!js >-
+        (() => { try { const r = process.getBuiltinModule('node:module').createRequire(process.argv[1]); try { return !!r.resolve('@deepseek-ai/dsh-workflow-ptc') } catch { return !r.resolve('@deepseek-ai/dsh-workflow-worker-thread') } } catch { return true } })()
       config:
         provider: spawn
 

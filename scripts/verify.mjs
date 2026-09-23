@@ -96,4 +96,82 @@ const presetYml = read(join('preset', 'agy-first', 'preset.yml'))
 check('preset.yml declares name', /^name:\s*\S+/m.test(presetYml))
 check('preset.yml declares description', /^description:\s*\S+/m.test(presetYml))
 
+// ── 6. 工作流引擎跨版本行（v1.7.1）──────────────────────────────────────────
+// 上游把工作流引擎改名了：dsh-base ≤0.1.5-rc.3 发
+// @deepseek-ai/dsh-workflow-worker-thread，≥0.1.6-alpha.1 发改名后的
+// @deepseek-ai/dsh-workflow-ptc。两条发布线都还在服役（npm latest=0.1.5-rc.3
+// 仍是 worker-thread，next/alpha=0.1.7-* 已是 ptc），所以写死任一个都会打断
+// 另一条线。而 preset 行的 name 是**原样 import** 的（只有 config/disabled 走
+// interpolate()），一行无法选包 —— 必须两行都声明、各自用 !!js disabled 自证。
+// 一旦有人"简化"成单行写死包名，就会在另一半 dsh 上让整个 preset 挂载失败
+// （auditRows() 见到任一 enabled 行 import 失败即拒绝整个 preset），故在此钉死。
+const allIds = new Set((cordis.match(/^[ \t]*- id: (\S+)$/gm) || []).map((r) => r.trim().slice(6)))
+
+check('preset declares the modern workflow engine row (workflow-ptc)', allIds.has('workflow-ptc'))
+check('preset declares the legacy workflow engine row (workflow-worker-thread)',
+  allIds.has('workflow-worker-thread'))
+
+// 两行都必须带 !!js disabled 守卫，且守卫基于 process.argv[1] 探测解析基准。
+// 用逐行扫描而非跨行正则，避免回溯歧义。
+const lines = cordis.split('\n')
+for (const id of ['workflow-ptc', 'workflow-worker-thread']) {
+  const start = lines.findIndex((l) => new RegExp(`^[ \\t]*- id: ${id}$`).test(l))
+  let body = ''
+  if (start !== -1) {
+    for (let i = start + 1; i < lines.length; i++) {
+      if (/^[ \t]*- id: /.test(lines[i])) break
+      body += lines[i] + '\n'
+    }
+  }
+  check(`workflow row ${id} carries a !!js disabled guard`, /disabled:\s*!!js/.test(body))
+  check(`workflow row ${id} guard probes process.argv[1] (live CLI resolution base)`,
+    /process\.argv\[1\]/.test(body) && /createRequire/.test(body))
+  // 两行都不得被无条件 disabled（那会让引擎在任何 dsh 上都不加载）
+  check(`workflow row ${id} is not unconditionally disabled`, !/^[ \t]*disabled:\s*true\s*$/m.test(body))
+}
+
+// ── 7. 预设声明行（v1.7.1 注册机制迁移）─────────────────────────────────────
+// DSH 0.1.6+ 不再读 $DSH_HOME/.agent-presets/<id>/（官方 skill 明言
+// "Nothing reads that directory any more"），预设必须经 bundle patch 里的
+// @deepseek-ai/dsh-agent-preset 声明行注册。声明行由 scripts/gen-preset-decl.mjs
+// 从 preset/agy-first/agent.cordis.yml verbatim 转录生成 —— 两者一旦漂移
+// （改了源文件忘了重跑生成器），GUI 里 cordis-agy 会重新挂载失败/内容过期。
+// 此节钉死三件事：声明行存在、id/name/order 正确、plugins 与源文件一致。
+const declMatch = bundlePatch.match(/^    - id: preset-cordis-agy$/m)
+check('bundle patch declares the preset row (preset-cordis-agy)', !!declMatch)
+check('bundle patch preset row registers @deepseek-ai/dsh-agent-preset',
+  /name:\s*['"]@deepseek-ai\/dsh-agent-preset['"]/.test(bundlePatch))
+check('bundle patch preset config id is cordis-agy (legacy session ids depend on it)',
+  /^\s+id:\s*cordis-agy$/m.test(bundlePatch))
+check('bundle patch preset bridge row uses the bare subpath (agy-first-bridge/preset-plugin)',
+  /name:\s*['"]?agy-first-bridge\/preset-plugin['"]?/.test(bundlePatch))
+check('package.json exports the ./preset-plugin subpath',
+  pkg.exports && pkg.exports['./preset-plugin'] === './preset/agy-first/agy-first-bridge.mjs')
+
+// verbatim 转录一致性：声明行 plugins 块 = 源文件每行去缩进（+10），
+// 除 bridge 行的 name 从 './agy-first-bridge.mjs' 改写为裸子路径外逐行相同。
+if (declMatch) {
+  const srcLines = cordis.split('\n').map((l) => l.replace(/\r$/, ''))
+  while (srcLines.length && srcLines[srcLines.length - 1].trim() === '') srcLines.pop()
+  const patchLines = bundlePatch.split('\n')
+  const declIdx = patchLines.findIndex((l) => l.trim() === '- id: preset-cordis-agy')
+  // plugins 块从 'plugins:' 键之后开始
+  let pi = declIdx
+  while (pi < patchLines.length && !/^ {8}plugins:$/.test(patchLines[pi])) pi++
+  const transcribed = []
+  for (let i = pi + 1; i < patchLines.length; i++) {
+    const l = patchLines[i]
+    if (l === '' ) { transcribed.push(l); continue }
+    if (/^ {0,8}\S/.test(l)) break // 缩进 ≤8 = 出了 plugins 块
+    transcribed.push(l.slice(10))
+  }
+  while (transcribed.length && transcribed[transcribed.length - 1].trim() === '') transcribed.pop()
+  const expect = srcLines.map((l) =>
+    l.includes('./agy-first-bridge.mjs')
+      ? l.replace("'./agy-first-bridge.mjs'", "'agy-first-bridge/preset-plugin'")
+      : l)
+  check('bundle patch plugins block is a verbatim transcription of agent.cordis.yml (' +
+    expect.length + ' lines)', transcribed.join('\n') === expect.join('\n'))
+}
+
 process.exit(failed ? 1 : 0)

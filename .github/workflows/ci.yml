@@ -46,6 +46,17 @@ jobs:
       - name: Release gate (scripts/verify.mjs)
         run: node scripts/verify.mjs
 
+      # Semantic preset gates. These import the REAL parser/evaluator from a local
+      # DSH install (entryListSchema + loader evaluate()) and assert that every
+      # enabled preset row resolves in the live dsh tree — the v1.7.1 bug class,
+      # where one renamed upstream package rejects the ENTIRE preset mount.
+      # CI runners have no DSH, so both suites SKIP (exit 0) and print why; they
+      # are load-bearing on a developer machine with DSH present.
+      - name: Preset gates (tests/)
+        run: |
+          node tests/preset-resolve.test.mjs
+          node tests/preset-workflow.test.mjs
+
       - name: Syntax-check dynamic bodies
         shell: bash
         run: |

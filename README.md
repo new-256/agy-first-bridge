@@ -202,7 +202,7 @@ agy-first-bridge/
    ├─ ARCHITECTURE.md
    ├─ FALLBACK-AND-INDICATOR.md
    ├─ SUPPORT.md                   # DSH 逐版本支持声明（基于逐 tarball 指纹回测）
-   ├─ CHANGELOG.md                 # 版本历史（1.0.0 → 1.7.0）
+   ├─ CHANGELOG.md                 # 版本历史（1.0.0 → 1.7.1）
    ├─ issues/BACKEND-ISSUES.md     # 提给 DSH/桌面壳上游的 issue 草案（item B/C）
    └─ handover/                    # 会话交接资料（audit 证据 + 客户端契约指纹）
    └─ en/                          # 英文文档
@@ -214,7 +214,8 @@ agy-first-bridge/
 
 | 版本 | 适配 DSH | 内容 |
 | --- | --- | --- |
-| [v1.7.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.7.0) | ≥ 0.1.2-rc.1（建议 ≥0.1.3-alpha.2；实测 0.1.5-rc.1） | **激励结构修复——让 agy-first 政策真正赢得模型决策**：① **上下文协议**：agy_run 首派改用紧凑 CONTEXT 前置块（指路径不贴内容，agy 自读仓库），同主题后续走 `agy_continue` 沿用会话（对齐 subagent_fork 的上下文体验）；② **默认后台化**：jobs 可用时 `background` 缺省 true，决策循环（运行→受限弹窗→重试/回退）下沉进 Job——后台失败同样弹回退框（废除旧"后台不弹框"的劝退设计），后台 Job 同时获得 DSH 硬超时防线；③ **决策点钩子**：`agy:policy` 段 order 5 → `TOOL_SUBAGENT+10`（紧随子代理引导、工具目录之前），两个 tool-subagent 行注入 persona，政策文本重写为紧凑决策表（"quick"钉死 <30s 判据、消除 agy_quota 预检矛盾）；附带 timeoutSec 默认 300→600s、结果头行去 `tokens=`（数据保留在 JSON 内） |
+| [v1.7.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.7.1) | ≥ 0.1.2-rc.1（**建议 ≥0.1.6-alpha.1 必须用本版**；实测 0.1.7-rc.1） | **修复 agent preset 在新版 DSH 上整体挂载失败（上游工作流引擎改名）**：`@deepseek-ai/dsh-workflow-worker-thread` 在 `dsh-base@0.1.6-alpha.1` 改名为 `@deepseek-ai/dsh-workflow-ptc`；preset 里写死的旧包名导致 import 失败，而 `auditRows()` 见任一 enabled 行失败即拒绝**整个** preset 挂载（不是只丢工作流工具）。因 `latest`(0.1.5-rc.3) 仍发旧包名、`next`/`alpha`(0.1.7-*) 已发新包名，**两条线都在服役**，故不能简单改名——改为两行并存 + `!!js disabled` 自证（`createRequire(process.argv[1])` 探测运行中 CLI 的解析基准），modern/legacy/未知三条路径实测恰好启用一个、且未知树上 preset 仍可挂载；新增 verify §6 静态闸门与 `tests/preset-workflow.test.mjs` 语义回归 |
+| [v1.7.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.7.0) | ≥ 0.1.2-rc.1（建议 ≥0.1.3-alpha.2；实测 0.1.5-rc.1） | **激励结构修复——让 agy-first 政策真正赢得模型决策**：① **上下文协议**：agy_run 首派改用紧凑 CONTEXT 前置块（指路径不贴内容，agy 自读仓库），同主题后续走 `agy_continue` 沿用会话（对齐 subagent_fork 的上下文体验）；② **默认后台化**：jobs 可用时 `background` 缺省 true，决策循环（运行→受限弹窗→重试/回退）下沉进 Job——后台失败同样弹回退框（废除旧"后台不弹框"的劝退设计），后台 Job 同时获得 DSH 硬超时防线；③ **决策点钩子**：`agy:policy` 段 order 5 → `TOOL_SUBAGENT+10`（紧随子代理引导、工具目录之前），两个 tool-subagent 行注入 persona，政策文本重写为紧凑决策表（"quick"钉死 <30s 判据、消除 agy_quota 预检矛盾）；附带 timeoutSec 默认 300→600s、结果头行去 `tokens=`（数据保留在 JSON 内）⚠️ 在 DSH ≥0.1.6-alpha.1 上 preset 整体挂载失败，请用 ≥v1.7.1 |
 | [v1.6.2](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.2) | ≥ 0.1.2-rc.1（建议 ≥0.1.3-alpha.2；实测 0.1.5-rc.1） | **修复合并包装下状态灯恒 idle**：host 半不再以 `import.meta.url` 找 `mcp-live.json`，改为 `AGY_MCP_LIVE_FILE` → `DSH_HOME` → `%APPDATA%\DSH Desktop\dsh-home` → `~/.dsh` 锚定，对齐 `dsh-plugin-manager-plus` 的 detectDshHome；verify 闸门加路径回归护栏 |
 | [v1.6.1](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.1) | ≥ 0.1.2-rc.1 | **修复整屏崩溃（全新安装 `Failed to load plugins`）**：client.js 里 `__ModuleLoader__.load` 的 id 改为 npm 包名 `agy-first-bridge`（1.6.0 写成了 `agy-indicator`，违背 dsh-client-modules `arrive()` 的 id 契约）；新增 `scripts/verify.mjs` 22 项发布前闸门（含 id 契约和版本三锁） |
 | [v1.6.0](https://github.com/new-256/agy-first-bridge/releases/tag/v1.6.0) | 0.1.3-alpha.2 | **双包合一**：灯并入主包 `agy-first-bridge`（主包 `package.json` 增加 DSH 插件面——`main` → 灯 Host 半、`exports` 双面、`dsh.bundle.patch`；`dsh plugin --profile web add agy-first-bridge` 单命令装灯），独立 npm 包 `agy-indicator` 弃用留档。⚠️ 存在两处后继修复，请直接使用 ≥v1.6.2 |
@@ -247,7 +248,8 @@ agy-first-bridge/
 支持声明的完整证据在 [docs/SUPPORT.md](docs/SUPPORT.md)（逐 tarball 字节级指纹回测自 `0.0.1-rc.1` → `0.1.5-rc.2`）。
 
 - **支持下限：`@deepseek-ai/dsh ≥ 0.1.2-rc.1`** —— 从这一版起 `dsh-client-modules` 才补全 `reloadUrls` / `exactPackageSpecifier` 等契约细节（同一条 `arrive()` 校验「`__ModuleLoader__.load({id})` 的 `id` 必须等于包名」从 `0.0.1-rc.1` 起就存在，但早期缺少配套契约构成，**不算支持**）。
-- **当前开发基准：`0.1.5-rc.1`**（也是 `latest` dist-tag；本机生产环境实测灯/工具/回退一切正常）。
+- **当前开发基准：`0.1.7-rc.1`**（`next` dist-tag；本机实测 preset 挂载、灯、工具、回退一切正常）。注意 `latest` 仍是 `0.1.5-rc.3`，两条发布线并存。
+- **工作流引擎改名分水岭（v1.7.1 起已自动适配）**：`dsh-base@0.1.6-alpha.1` 把 `@deepseek-ai/dsh-workflow-worker-thread` 改名为 `@deepseek-ai/dsh-workflow-ptc`。preset 已改为两行并存 + `!!js disabled` 自证，两条线都能挂载。**1.7.0 及以前在 ≥0.1.6-alpha.1 上会整体挂载失败**（`auditRows()` 拒绝整个 preset，而不只是丢工作流工具）。
 - **桌面壳（DSH Desktop）**：对壳版本**无要求**；壳的 enterSafeMode 粒度问题与本插件无关（详见 `docs/issues/BACKEND-ISSUES.md`）。
 
 ## 开发纪律（开发-制品闭环）

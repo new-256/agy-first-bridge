@@ -598,8 +598,14 @@ export function apply(ctx) {
     return res
   }
 
+  // [本地修复 2026-09-22] 原为 C:\Users\lcl\Desktop\agy-first-bridge\...（dev
+  // 仓库已移走 → 失效）。主解析 ../../bin 已正确指向 dsh-home\bin；此兜底列表
+  // 补上 npm 包内副本（不同目录，独立冗余）与稳定部署副本。
+  // [1.7.1 回填] 该热修 2026-09-22 只改了部署副本；v1.7.1 将其回填进仓库，
+  // 使 preset/agy-first/ 与部署件字节一致（消除仓库/部署分歧）。
   const QUOTA_FALLBACK_SCRIPTS = [
-    'C:\\Users\\lcl\\Desktop\\agy-first-bridge\\bin\\agy-quota.mjs',
+    'C:\\Users\\lcl\\AppData\\Roaming\\DSH Desktop\\dsh-home\\profiles\\web\\node_modules\\agy-first-bridge\\bin\\agy-quota.mjs',
+    'C:\\Users\\lcl\\AppData\\Roaming\\DSH Desktop\\dsh-home\\bin\\agy-quota.mjs',
   ]
 
   async function execQuotaScript() {
