@@ -1,3 +1,13 @@
+> **⚠️ 此包已统一 / This package is unified**
+>
+> 三个旧桥接包（agy / codebuddy / mimo）已合并为统一包 **[@luchenglong/cli-bridge](https://www.npmjs.com/package/@luchenglong/cli-bridge)**
+> （仓库 [new-256/cli-bridge](https://github.com/new-256/cli-bridge)）。旧包在 npm 上已标记 deprecated。
+>
+> 安装：`npm i @luchenglong/cli-bridge`　迁移对照：[docs/MIGRATION.md](https://github.com/new-256/cli-bridge/blob/main/docs/MIGRATION.md)
+> 本仓库已归档（只读），代码与历史保留。
+
+---
+
 # agy-first-bridge
 
 **简体中文** · [English](README.en.md)
